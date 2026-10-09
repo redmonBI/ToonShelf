@@ -1,0 +1,10 @@
+state/
+portable*/
+build*/
+Downloads/
+Updates/
+validation*/
+__pycache__/
+*.zip
+SHA256SUMS.txt
+*.png
