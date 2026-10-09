@@ -1,8 +1,10 @@
 import hashlib
+import base64
 import json
 import re
 import shutil
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlencode,urlsplit
@@ -21,7 +23,10 @@ def get_json(url):
     if len(raw)>4*1024*1024:raise ValueError('공유 데이터가 너무 큽니다.')
     return json.loads(raw)
 def community(repo=REPOSITORY):
-    return get_json(f'https://raw.githubusercontent.com/{repository(repo)}/main/shared/community.json')
+    # Read the current Contents revision rather than the stale raw-file CDN.
+    data=get_json(f'https://api.github.com/repos/{repository(repo)}/contents/shared/community.json?ref=main&refresh={time.time_ns()}')
+    if data.get('encoding')!='base64':raise ValueError('공유 데이터 형식이 올바르지 않습니다.')
+    return json.loads(base64.b64decode(data['content'],validate=False))
 def releases(repo=REPOSITORY):
     return get_json(f'https://api.github.com/repos/{repository(repo)}/releases?per_page=30')
 def version_tuple(value):

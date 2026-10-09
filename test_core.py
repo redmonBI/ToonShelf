@@ -1,6 +1,7 @@
 import hashlib
 import tempfile
 import unittest
+from contextlib import closing
 from collections import OrderedDict
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -104,14 +105,13 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(parse_images(html, 'https://example.com', '#toon_content_imgs img'), ['https://example.com/a.jpg', 'https://example.com/b.jpg'])
 
     def test_size_original_names_resume_and_damage(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            archive = Archive(Path(tmp))
+        with tempfile.TemporaryDirectory() as tmp, closing(Archive(Path(tmp))) as archive:
             work = Work('작품', 'https://old.com/webtoon/1.html')
             ep = Episode('작품 1화', 'https://old.com/webtoons/1/11.html', '2026-10-01', 1, '1화')
             self.assertIsNone(archive.save(work, ep, 'https://img.com/tiny.png', image(99,200), (100,100)))
             self.assertIsNone(archive.save(work, ep, 'https://img.com/short.png', image(200,99), (100,100)))
             path = archive.save(work, ep, 'https://img.com/original.png', image(100,100), (100,100))
-            self.assertEqual(path.relative_to(Path(tmp)), Path('작품/1화/original.png'))
+            self.assertEqual(path.relative_to(Path(tmp).resolve()), Path('작품/1화/original.png'))
             key = archive.key(work, ep, 'https://img.com/original.png')
             self.assertTrue(archive.existing(key))
             work.url = 'https://new.com/webtoon/1.html'
@@ -122,7 +122,6 @@ class CoreTests(unittest.TestCase):
             repaired = archive.save(work, ep, 'https://newcdn.com/original.png', image(100,100), (100,100))
             self.assertEqual(path, repaired)
             self.assertTrue(archive.existing(key))
-            archive.close()
 
     def test_numeric_order_despite_reposted_dates(self):
         html = '<a href="/webtoons/1/2.html">작품 2화 2026-10-01</a><a href="/webtoons/1/1.html">작품 1화 2026-10-05</a>'
