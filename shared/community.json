@@ -1,6 +1,20 @@
 {
-  "posts": [],
+  "posts": [
+    {
+      "id": "1",
+      "author": "배포 검사",
+      "account": "redmonBI",
+      "title": "[검증용] ToonShelf 공유 동작 확인",
+      "genre": "검증",
+      "body": "추천 등록·동감·관리 권한 확인을 위한 검사 항목입니다. 검증 후 추천 목록에서 제거합니다.",
+      "created": "2026-10-09T18:01:24+00:00",
+      "updated": "2026-10-09T18:01:24+00:00",
+      "votes": []
+    }
+  ],
   "sites": [],
-  "processed": [],
-  "updated": null
+  "processed": [
+    "1"
+  ],
+  "updated": "2026-10-09T18:01:24+00:00"
 }
