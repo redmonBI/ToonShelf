@@ -1,0 +1,28 @@
+name: Community requests
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: toonshelf-community
+  cancel-in-progress: false
+jobs:
+  process:
+    if: github.event_name != 'issues' || startsWith(github.event.issue.title, '[ToonShelf]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Process queued requests using trusted code
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python community_action.py
