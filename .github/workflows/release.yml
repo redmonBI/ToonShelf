@@ -1,0 +1,30 @@
+name: Build and publish Windows release
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: toonshelf-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt pyinstaller
+      - name: Run tests without shutting down runner
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest test_core test_library test_v3 -v
+      - run: python -m PyInstaller --clean --noconfirm --distpath portable ToonShelf.spec
+      - run: python package_v3.py
+      - name: Publish version and verified assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $releaseVersion = python -c "from sharing import VERSION; print(VERSION)"
+          gh release create "v$releaseVersion" "ToonShelf_${releaseVersion}_Windows.zip" SHA256SUMS.txt --title "ToonShelf $releaseVersion" --notes-file RELEASE_NOTES.md --repo "${{ github.repository }}"
