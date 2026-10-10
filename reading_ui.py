@@ -63,7 +63,7 @@ class ComicCanvas(QWidget):
                 _,im=self.cache.popitem(last=False);self.cache_bytes-=im.sizeInBytes()
         self.update()
     def paintEvent(self,event):
-        painter=QPainter(self);painter.fillRect(event.rect(),self.palette().window());painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        painter=QPainter(self);background=getattr(self,'background',None) or self.palette().window().color();painter.fillRect(event.rect(),background);painter.setRenderHint(QPainter.SmoothPixmapTransform)
         start=max(0,bisect_right(self.offsets,event.rect().top())-1)
         for i in range(start,len(self.items)):
             if self.offsets[i]>event.rect().bottom():break
@@ -71,16 +71,16 @@ class ComicCanvas(QWidget):
             if i in self.cache:
                 self.cache.move_to_end(i);painter.drawImage(rect,self.cache[i])
             else:
-                painter.setPen(self.palette().text().color());message=self.items[i]['error'] or self.errors.get(i) or f'이미지 {i+1} 불러오는 중…'
+                painter.setPen(QColor('#202020') if background.lightness()>150 else QColor('#f4f4f4'));message=self.items[i]['error'] or self.errors.get(i) or f'이미지 {i+1} 불러오는 중…'
                 painter.drawText(rect,Qt.AlignCenter,message)
         painter.end()
 
 class OfflineLibrary(QWidget):
     def __init__(self,host):
         super().__init__();self.host=host;self.rows=[];self.task=None;self.work=None;self.chapter=0;self.page=0;self.images=[];self.mirrors=[];self.mirror_work=None;self.popup=None;self.closed=False
-        lay=QVBoxLayout(self);lay.setContentsMargins(28,24,28,24)
-        header=QHBoxLayout();title=QLabel('내 작품 라이브러리');title.setStyleSheet('font-size:28px;font-weight:700');header.addWidget(title);header.addStretch()
-        header.addWidget(btn('새로고침',self.refresh));header.addWidget(btn('뷰어 설정',host.reader_settings));header.addWidget(btn('다운로드 화면',host.show_catalog));lay.addLayout(header)
+        lay=QVBoxLayout(self);self.main_layout=lay;lay.setContentsMargins(28,24,28,24)
+        self.header=QWidget();header=QHBoxLayout(self.header);title=QLabel('내 작품 라이브러리');title.setStyleSheet('font-size:28px;font-weight:700');header.addWidget(title);header.addStretch()
+        header.addWidget(btn('새로고침',self.refresh));header.addWidget(btn('뷰어 설정',host.reader_settings));header.addWidget(btn('다운로드 화면',host.show_catalog));lay.addWidget(self.header)
         self.status=QLabel('보관함을 불러오는 중…');lay.addWidget(self.status)
         self.loading=QProgressBar();self.loading.setRange(0,0);self.loading.setFixedHeight(8);lay.addWidget(self.loading)
         self.stack=QStackedWidget();lay.addWidget(self.stack,1)
@@ -91,19 +91,46 @@ class OfflineLibrary(QWidget):
         tools.addWidget(self.search,1);tools.addWidget(self.genre);tools.addWidget(self.sort);sl.addLayout(tools)
         self.shelf_scroll=QScrollArea();self.shelf_scroll.setWidgetResizable(True);self.grid_widget=QWidget();self.grid=QGridLayout(self.grid_widget);self.grid.setAlignment(Qt.AlignTop);self.shelf_scroll.setWidget(self.grid_widget);sl.addWidget(self.shelf_scroll,1)
         self.pager=Pagination();self.pager.requested.connect(self.go_page);sl.addWidget(self.pager);self.stack.addWidget(shelf)
-        reader=QWidget();rl=QVBoxLayout(reader);bar=QHBoxLayout();bar.addWidget(btn('‹ 라이브러리',self.back));self.prev=btn('이전 화',lambda:self.move(-1));bar.addWidget(self.prev)
+        reader=QWidget();rl=QVBoxLayout(reader);self.reader_layout=rl;self.reader_bar=QWidget();bar=QHBoxLayout(self.reader_bar);bar.addWidget(btn('‹ 라이브러리',self.back));self.prev=btn('이전 화',lambda:self.move(-1));bar.addWidget(self.prev)
         self.chapters=QComboBox();self.chapters.currentIndexChanged.connect(self.select_chapter);bar.addWidget(self.chapters,1)
-        self.next=btn('다음 화',lambda:self.move(1));bar.addWidget(self.next);bar.addWidget(btn('OpenComic으로 열기',self.external));rl.addLayout(bar)
-        widthbar=QHBoxLayout();widthbar.addWidget(QLabel('읽기 폭'));self.width_slider=QSlider(Qt.Horizontal);self.width_slider.setRange(400,1600);self.width_slider.setValue(host.cfg.get('reader_width',850));widthbar.addWidget(self.width_slider);self.width_slider.valueChanged.connect(self.resize_reading)
-        self.position=QLabel();widthbar.addWidget(self.position);rl.addLayout(widthbar)
-        self.read_scroll=QScrollArea();self.read_scroll.setWidgetResizable(True);self.canvas=ComicCanvas(self.read_scroll);self.read_scroll.setWidget(self.canvas);rl.addWidget(self.read_scroll,1);self.stack.addWidget(reader)
+        self.next=btn('다음 화',lambda:self.move(1));bar.addWidget(self.next);bar.addWidget(btn('OpenComic으로 열기',self.external));rl.addWidget(self.reader_bar)
+        self.reader_footer=QWidget();widthbar=QHBoxLayout(self.reader_footer);widthbar.addWidget(QLabel('읽기 폭'));self.width_slider=QSlider(Qt.Horizontal);self.width_slider.setRange(400,1600);self.width_slider.setValue(host.cfg.get('reader_width',850));widthbar.addWidget(self.width_slider);self.width_slider.valueChanged.connect(self.resize_reading)
+        self.position=QLabel();widthbar.addWidget(self.position)
+        self.read_scroll=QScrollArea();self.read_scroll.setWidgetResizable(True);self.canvas=ComicCanvas(self.read_scroll);self.read_scroll.setWidget(self.canvas);rl.addWidget(self.read_scroll,1);rl.addWidget(self.reader_footer);self.stack.addWidget(reader)
+        self.quick=QWidget(self.read_scroll.viewport());quick=QHBoxLayout(self.quick);quick.setContentsMargins(4,4,4,4)
+        quick.addWidget(btn('‹ 목록',self.back));quick.addWidget(btn('도구 표시',self.show_tools));quick.addWidget(btn('⚙',host.settings));self.quick.adjustSize();self.quick.hide()
         self.read_scroll.verticalScrollBar().valueChanged.connect(self.scrolled)
         self.read_scroll.verticalScrollBar().rangeChanged.connect(self.restore_scroll)
         self.restore_fraction=None
         self.resize_timer=QTimer(self);self.resize_timer.setSingleShot(True);self.resize_timer.timeout.connect(self.apply_width)
         self.progress_timer=QTimer(self);self.progress_timer.setSingleShot(True);self.progress_timer.timeout.connect(self.save_position)
-        for key,fn in [('Alt+Left',lambda:self.move(-1)),('Alt+Right',lambda:self.move(1)),('Escape',self.back)]:
+        for key,fn in [('Alt+Left',lambda:self.move(-1)),('Alt+Right',lambda:self.move(1)),('Escape',self.escape),('F9',self.toggle_focus)]:
             shortcut=QShortcut(QKeySequence(key),self);shortcut.activated.connect(fn)
+        self.apply_preferences(False)
+
+    def toggle_focus(self):self.host.set_view_preference('reader_focus',not self.host.cfg.get('reader_focus',False))
+    def show_tools(self):
+        self.host.cfg.update(reader_focus=False,reader_hide_top=False,reader_hide_bottom=False);self.host.persist_settings();self.host.apply_view_preferences()
+    def escape(self):
+        if self.stack.currentIndex()==1 and any(self.host.cfg.get(k) for k in ('reader_focus','reader_hide_top','reader_hide_bottom')):self.show_tools()
+        else:self.back()
+    def apply_preferences(self,reading):
+        if self.closed:return
+        focus=reading and self.host.cfg.get('reader_focus',False)
+        top=reading and (focus or self.host.cfg.get('reader_hide_top',False));bottom=reading and (focus or self.host.cfg.get('reader_hide_bottom',False))
+        layout_state=(focus,top,bottom)
+        if self.images and getattr(self,'layout_state',None)!=layout_state:
+            bar=self.read_scroll.verticalScrollBar();self.resize_fraction=bar.value()/max(1,bar.maximum());self.resize_timer.start(180)
+        self.layout_state=layout_state
+        self.header.setVisible(not top);self.status.setVisible(not top);self.reader_bar.setVisible(not top);self.reader_footer.setVisible(not bottom)
+        self.main_layout.setContentsMargins(*( (0,0,0,0) if focus else (28,24,28,24)))
+        self.reader_layout.setContentsMargins(*( (0,0,0,0) if focus else (9,9,9,9)))
+        self.main_layout.setSpacing(0 if focus else 6);self.reader_layout.setSpacing(0 if focus else 6)
+        value=self.host.cfg.get('reader_background','');color=QColor(value) if value else None
+        self.canvas.background=color if color and color.isValid() else None
+        self.canvas.update();self.quick.setVisible(bool(reading and (top or bottom)));self.quick.raise_();self.position_quick()
+    def position_quick(self):
+        self.quick.adjustSize();self.quick.move(max(0,self.read_scroll.viewport().width()-self.quick.width()-14),8)
     def run(self,operation,done):
         if self.task and self.task.isRunning():return False
         self.loading.show();self.status.setText('불러오는 중…');self.prev.setEnabled(False);self.next.setEnabled(False);self.chapters.setEnabled(False)
@@ -155,6 +182,7 @@ class OfflineLibrary(QWidget):
         self.chapters.blockSignals(True);self.chapters.setCurrentIndex(self.chapter);self.chapters.blockSignals(False);self.stack.setCurrentIndex(1)
         if self.host.cfg.get('reader_mode','embedded')=='opencomic':self.external()
         else:self.load_chapter()
+        if hasattr(self.host,'apply_view_preferences'):self.host.apply_view_preferences()
     def select_chapter(self,index):
         if index<0 or not self.work or (self.task and self.task.isRunning()):return
         self.save_position();self.chapter=index
@@ -173,8 +201,12 @@ class OfflineLibrary(QWidget):
         self.run(lambda c,e:chapter_images(self.root,chapter,c),loaded)
     def resize_reading(self):self.resize_timer.start(180)
     def apply_width(self):
-        bar=self.read_scroll.verticalScrollBar();fraction=self.restore_fraction if self.restore_fraction is not None else bar.value()/max(1,bar.maximum());width=min(self.width_slider.value(),max(320,self.read_scroll.viewport().width()-20))
+        if self.closed:return
+        bar=self.read_scroll.verticalScrollBar();fraction=getattr(self,'resize_fraction',None)
+        if fraction is None:fraction=self.restore_fraction if self.restore_fraction is not None else bar.value()/max(1,bar.maximum())
+        self.resize_fraction=None;self.restore_fraction=fraction; width=min(self.width_slider.value(),max(320,self.read_scroll.viewport().width()-20))
         self.canvas.configure(self.images,width);bar.setValue(int(fraction*bar.maximum()));self.host.cfg['reader_width']=self.width_slider.value()
+        QTimer.singleShot(0,self.restore_scroll)
     def restore_scroll(self,*args):
         bar=self.read_scroll.verticalScrollBar()
         if self.restore_fraction is not None and self.images and bar.maximum()>0:
@@ -182,6 +214,7 @@ class OfflineLibrary(QWidget):
     def resizeEvent(self,event):
         super().resizeEvent(event)
         if hasattr(self,'resize_timer') and not self.closed:self.resize_timer.start(180)
+        if hasattr(self,'quick'):QTimer.singleShot(0,self.position_quick)
     def scrolled(self):
         if self.closed:return
         self.canvas.ensure_visible();bar=self.read_scroll.verticalScrollBar();self.position.setText(f'{round(bar.value()/max(1,bar.maximum())*100)}%');self.progress_timer.start(500)
@@ -189,7 +222,9 @@ class OfflineLibrary(QWidget):
         if self.closed or not self.work or not self.images or self.restore_fraction is not None:return
         bar=self.read_scroll.verticalScrollBar();key=self.work['chapters'][self.chapter]['key'];fraction=bar.value()/max(1,bar.maximum())
         positions=self.host.cfg.setdefault('reading_positions',{});pos=positions.setdefault(self.work['key'],{});pos.setdefault('offsets',{})[key]=fraction;pos.update(chapter=key,fraction=fraction);self.host.persist_settings()
-    def back(self):self.save_position();self.stack.setCurrentIndex(0)
+    def back(self):
+        self.save_position();self.stack.setCurrentIndex(0)
+        if hasattr(self.host,'apply_view_preferences'):self.host.apply_view_preferences()
     def external(self):
         if not self.work:return
         exe=self.host.opencomic_path()

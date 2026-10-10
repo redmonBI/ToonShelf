@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlencode,urlsplit
 from zipfile import ZipFile
 
-VERSION='3.1.2'
+VERSION='3.1.3'
 REPOSITORY='redmonBI/ToonShelf'
 def repository(value):
     value=value.strip().removeprefix('https://github.com/').rstrip('/')

@@ -9,6 +9,41 @@ from pagination import Pagination,page_numbers
 import themes
 
 class AppearanceTests(unittest.TestCase):
+ def test_focus_controls_restore_navigation_and_keep_reading_position(self):
+  import app
+  from reading_ui import OfflineLibrary
+  from PySide6.QtTest import QTest
+  q=QApplication.instance() or QApplication([])
+  with tempfile.TemporaryDirectory() as tmp,patch.object(app,'STATE',Path(tmp)):
+   w=app.Window();w.cover_timer.stop();pane=OfflineLibrary(w);w.offline=pane;w.content_stack.addWidget(pane);w.content_stack.setCurrentWidget(pane);pane.stack.setCurrentIndex(1);pane.loading.hide()
+   pane.images=[dict(width=300,height=1200,path='',error='검증 이미지') for _ in range(5)]
+   w.show();QTest.qWait(250);pane.apply_width();QTest.qWait(50);bar=pane.read_scroll.verticalScrollBar();bar.setValue(int(bar.maximum()*.45));height=pane.read_scroll.viewport().height()
+   w.set_view_preference('reader_focus',True);QTest.qWait(300)
+   self.assertGreater(pane.read_scroll.viewport().height(),height);self.assertFalse(w.app_toolbar.isVisible());self.assertFalse(w.sidebar.isVisible());self.assertFalse(pane.reader_bar.isVisible());self.assertFalse(pane.reader_footer.isVisible());self.assertTrue(pane.quick.isVisible());self.assertAlmostEqual(bar.value()/bar.maximum(),.45,delta=.01)
+   pane.escape();QTest.qWait(300);self.assertTrue(w.app_toolbar.isVisible());self.assertTrue(pane.reader_bar.isVisible());self.assertTrue(pane.reader_footer.isVisible());self.assertFalse(pane.quick.isVisible());self.assertAlmostEqual(bar.value()/bar.maximum(),.45,delta=.01)
+   w.set_view_preference('reader_focus',True);w.show_catalog();q.processEvents();self.assertTrue(w.sidebar.isVisible());self.assertTrue(w.app_toolbar.isVisible());self.assertTrue(w.cfg['reader_focus']);w.close();q.processEvents()
+ def test_custom_background_only_colors_space_and_survives_restart(self):
+  import app
+  from reading_ui import OfflineLibrary
+  from PySide6.QtGui import QImage,QColor
+  q=QApplication.instance() or QApplication([])
+  with tempfile.TemporaryDirectory() as tmp,patch.object(app,'STATE',Path(tmp)):
+   w=app.Window();w.cover_timer.stop();pane=OfflineLibrary(w);w.offline=pane;w.content_stack.addWidget(pane)
+   w.set_view_preference('reader_background','#AbC123');self.assertEqual(w.cfg['reader_background'],'#abc123')
+   canvas=pane.canvas;canvas.resize(800,200);canvas.width_read=100;canvas.items=[dict(error='')];canvas.offsets=[0,100];image=QImage(100,100,QImage.Format_RGB32);image.fill(QColor('red'));canvas.cache[0]=image
+   rendered=canvas.grab().toImage();self.assertEqual(rendered.pixelColor(10,50).name(),'#abc123');self.assertEqual(rendered.pixelColor(rendered.width()//2,50).name(),'#ff0000')
+   w.apply_theme('dark');self.assertEqual(canvas.background.name(),'#abc123')
+   with self.assertRaises(ValueError):w.set_view_preference('reader_background','invalid')
+   w.close();q.processEvents();other=app.Window();other.cover_timer.stop();self.assertEqual(other.cfg['reader_background'],'#abc123');other.close();q.processEvents();themes.apply(q,'white')
+ def test_settings_center_applies_saves_and_reopens_preferences(self):
+  import app
+  from preferences_ui import SettingsCenter
+  q=QApplication.instance() or QApplication([])
+  with tempfile.TemporaryDirectory() as tmp,patch.object(app,'STATE',Path(tmp)):
+   w=app.Window();w.cover_timer.stop();before=dict(w.cfg);dialog=SettingsCenter(w,1);self.assertEqual(w.cfg,before);self.assertEqual(dialog.tabs.count(),4)
+   dialog.reader_hide_top.setChecked(True);dialog.reader_hide_bottom.setChecked(True);dialog.read_width.setValue(1000);dialog.set_background('#f4ecd8');dialog.menu_compact.setChecked(True)
+   saved=json.loads((Path(tmp)/'settings.json').read_text(encoding='utf-8'));self.assertTrue(saved['reader_hide_top']);self.assertTrue(saved['reader_hide_bottom']);self.assertEqual(saved['reader_width'],1000);self.assertEqual(saved['reader_background'],'#f4ecd8')
+   dialog.close();reopened=SettingsCenter(w);self.assertTrue(reopened.reader_hide_top.isChecked());self.assertEqual(reopened.read_width.value(),1000);reopened.set_background('');self.assertEqual(w.cfg['reader_background'],'');reopened.close();w.close();q.processEvents()
  def test_panel_controls_persist_and_navigation_stays_available(self):
   import app
   q=QApplication.instance() or QApplication([])

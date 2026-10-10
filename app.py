@@ -196,12 +196,12 @@ class Window(QMainWindow):
         root = QWidget()
         self.setCentralWidget(root)
         shell=QVBoxLayout(root);shell.setContentsMargins(0,0,0,0);shell.setSpacing(0)
-        toolbar=QHBoxLayout();toolbar.setContentsMargins(12,7,12,7)
+        self.app_toolbar=QWidget();toolbar=QHBoxLayout(self.app_toolbar);toolbar.setContentsMargins(12,7,12,7)
         self.menu_toggle=button('☰ 메뉴 접기',self.toggle_menu);toolbar.addWidget(self.menu_toggle)
         toolbar.addStretch()
         self.compact_download=button('선택 작품 다운로드 ↓',self.start_download,True);toolbar.addWidget(self.compact_download)
         self.rules_toggle=button('저장 규칙 숨기기',self.toggle_rules);toolbar.addWidget(self.rules_toggle)
-        shell.addLayout(toolbar)
+        toolbar.addWidget(button('⚙ 설정',self.settings));shell.addWidget(self.app_toolbar)
         outer = QHBoxLayout();shell.addLayout(outer,1)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -735,38 +735,8 @@ class Window(QMainWindow):
             self.status.setText(f'작품 {len(self.works):,}개 · 선택 후 다운로드하세요')
 
     def settings(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle('세부 설정')
-        dialog.resize(550, 270)
-        layout = QFormLayout(dialog)
-        theme=QComboBox();theme.addItems([v[0] for v in themes.THEMES.values()]);theme.setCurrentIndex(list(themes.THEMES).index(themes.key(self.cfg.get('theme'))))
-        theme.currentIndexChanged.connect(lambda i:self.apply_theme(list(themes.THEMES)[i]))
-        layout.addRow('테마 · 즉시 적용 / 자동 저장',theme)
-        delay = QDoubleSpinBox()
-        delay.setRange(.1, 30)
-        delay.setSingleStep(.1)
-        delay.setValue(self.cfg['delay'])
-        browser = QCheckBox('작업용 브라우저 창 표시')
-        browser.setChecked(self.cfg['visible_browser'])
-        selector = QLineEdit(self.cfg['image_selector'])
-        layout.addRow('이미지 요청 사이 대기(초)', delay)
-        layout.addRow('브라우저', browser)
-        layout.addRow('본문 이미지 선택자', selector)
-        layout.addRow(button('읽기 뷰어 설정 · 내장 / OpenComic',self.reader_settings))
-        layout.addRow(label('기본값은 확인된 본문 영역만 선택합니다.\n사이트 구조가 달라지면 이 값을 수정할 수 있습니다.', 'muted'))
-        def save():
-            from bs4 import BeautifulSoup
-            try:
-                BeautifulSoup('', 'html.parser').select(selector.text())
-                if not selector.text().strip():
-                    raise ValueError('본문 선택자를 입력하세요.')
-                self.cfg.update(delay=delay.value(), visible_browser=browser.isChecked(), image_selector=selector.text())
-                self.read_cfg()
-                dialog.accept()
-            except Exception as exc:
-                QMessageBox.warning(dialog, '설정 확인', str(exc))
-        layout.addRow(button('설정 저장', save, True))
-        dialog.exec()
+        from preferences_ui import SettingsCenter
+        SettingsCenter(self).exec()
 
     def history(self):
         if self.queue_job or (self.job and self.job.isRunning()):
@@ -922,12 +892,14 @@ class Window(QMainWindow):
         if persist:self.persist_settings()
     def show_catalog(self):
         self.content_stack.setCurrentWidget(self.download_page);self.set_page_nav(False);self.compact_download.setEnabled(True)
+        self.apply_view_preferences()
     def show_offline(self):
         self.compact_download.setEnabled(False)
         from reading_ui import OfflineLibrary
         if getattr(self,'offline',None) is None:
             self.offline=OfflineLibrary(self);self.content_stack.addWidget(self.offline)
         self.content_stack.setCurrentWidget(self.offline)
+        self.apply_view_preferences()
         self.set_page_nav(True)
         if not self.offline.rows or self.offline.root!=Path(self.path.text()).expanduser().resolve():self.offline.refresh()
     def opencomic_path(self):
@@ -935,19 +907,9 @@ class Window(QMainWindow):
         bundled=APP_DIR/'Vendor'/'OpenComic'/'OpenComic.exe'
         return configured if configured and Path(configured).is_file() else str(bundled) if bundled.is_file() else ''
     def reader_settings(self):
-        d=QDialog(self);d.setWindowTitle('읽기 뷰어 설정');d.resize(600,300);form=QFormLayout(d)
-        mode=QComboBox();mode.addItems(['프로그램 안에서 세로로 읽기','OpenComic 별도 창으로 읽기']);mode.setCurrentIndex(self.cfg.get('reader_mode')=='opencomic')
-        path=QLineEdit(self.opencomic_path());row=QHBoxLayout();row.addWidget(path)
-        def pick():
-            selected,_=QFileDialog.getOpenFileName(d,'OpenComic 실행 파일 선택',path.text(),'실행 파일 (*.exe)')
-            if selected:path.setText(selected)
-        row.addWidget(button('찾기',pick));form.addRow('작품 클릭 시',mode);form.addRow('OpenComic',row)
-        form.addRow(label('내장: 세로 스크롤 · 읽던 위치 복원 · 이전/다음 화\nOpenComic: 별도 창 · 숫자 순서 읽기용 폴더 연결\nAlt+← / Alt+→ 로 회차를 이동합니다.','muted'))
-        def save():
-            if mode.currentIndex() and (not Path(path.text()).is_file() or Path(path.text()).suffix.lower()!='.exe'):
-                QMessageBox.warning(d,'뷰어 확인','OpenComic 실행 파일을 선택하세요.');return
-            self.cfg.update(reader_mode='opencomic' if mode.currentIndex() else 'embedded',opencomic_exe=path.text());self.persist_settings();d.accept()
-        form.addRow(button('설정 저장',save,True));d.exec()
+        from preferences_ui import SettingsCenter
+        SettingsCenter(self,1).exec()
+
     def refresh_speed(self):
         from download_metrics import duration
         from library import size_text
@@ -956,6 +918,19 @@ class Window(QMainWindow):
         value=self.download_meter.snapshot()
         if active:self.speed_label.setText('일시정지 · 예상 시간 대기' if value['paused'] else f"실효 속도 {size_text(value['speed'])}/초\n현재 작품 예상 남은 시간 {duration(value['remaining'])}")
         else:self.speed_label.setText('속도 — · 다운로드 대기 중')
+
+    def set_view_preference(self,key,value):
+        if key=='reader_background':
+            if value and not QColor(value).isValid():raise ValueError('배경색을 확인하세요.')
+            value=QColor(value).name() if value else ''
+        self.cfg[key]=value;self.persist_settings();self.apply_view_preferences()
+
+    def apply_view_preferences(self):
+        pane=getattr(self,'offline',None)
+        reading=bool(pane and self.content_stack.currentWidget()==pane and pane.stack.currentIndex()==1 and self.cfg.get('reader_mode','embedded')=='embedded')
+        focused=reading and self.cfg.get('reader_focus',False)
+        self.app_toolbar.setVisible(not focused);self.sidebar.setVisible(not focused)
+        if pane:pane.apply_preferences(reading)
 
 
 def main():
