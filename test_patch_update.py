@@ -5,6 +5,7 @@ import patch_update as updater
 
 class PatchTests(unittest.TestCase):
  def fixture(self,root):
+  root=root.resolve()
   target=root/'existing';target.mkdir();(target/'ToonShelf.exe').write_bytes(b'old')
   (target/'state').mkdir();(target/'state'/'settings.json').write_bytes(b'personal')
   (target/'Downloads').mkdir();(target/'Downloads'/'image.jpg').write_bytes(b'original')
