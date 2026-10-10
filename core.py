@@ -29,13 +29,8 @@ def safe_name(value: str, fallback="untitled") -> str:
 
 
 def validate_url(value: str) -> str:
-    value = value.strip()
-    if '://' not in value:
-        value = 'https://' + value
-    parts = urlsplit(value)
-    if parts.scheme not in ('http', 'https') or not parts.hostname or parts.username or parts.password:
-        raise ValueError('http 또는 https 사이트 주소를 입력하세요.')
-    return value.rstrip('/')
+    from link_input import normalize_url
+    return normalize_url(value).rstrip('/')
 
 
 @dataclass

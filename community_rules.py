@@ -2,14 +2,13 @@
 import copy
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
+from link_input import normalize_url
 
 def text(value,limit=200):
     if not isinstance(value,str) or not value.strip() or len(value)>limit:raise ValueError('필수 항목 또는 길이를 확인하세요.')
     return value.strip()
 def url(value):
-    value=text(value,2000);p=urlsplit(value)
-    if p.scheme not in ['http','https'] or not p.netloc or p.username:raise ValueError('http/https 링크만 가능합니다.')
-    return value
+    return normalize_url(value)
 def apply_request(data,request,actor,admin,request_id,date=None):
     data=copy.deepcopy(data);data.setdefault('posts',[]);data.setdefault('sites',[]);data.setdefault('processed',[])
     if str(request_id) in data['processed']:return data

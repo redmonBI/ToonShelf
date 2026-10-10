@@ -9,6 +9,23 @@ from pagination import Pagination,page_numbers
 import themes
 
 class AppearanceTests(unittest.TestCase):
+ def test_panel_controls_persist_and_navigation_stays_available(self):
+  import app
+  q=QApplication.instance() or QApplication([])
+  with tempfile.TemporaryDirectory() as tmp,patch.object(app,'STATE',Path(tmp)):
+   w=app.Window();w.cover_timer.stop();w.show();q.processEvents()
+   w.menu_toggle.click();w.rules_toggle.click();q.processEvents()
+   self.assertEqual(w.sidebar.width(),68);self.assertFalse(w.right_rail.isVisible());self.assertTrue(w.compact_download.isVisible())
+   self.assertEqual(w.library_nav.accessibleName(),'▣   다운로드 작품')
+   self.assertEqual(w.library_nav.text(),'▣')
+   w.url.setText('[https://blacktoon423.com](https://blacktoon423.com)')
+   self.assertEqual(w.read_cfg()['site_url'],'https://blacktoon423.com');self.assertEqual(w.url.text(),'https://blacktoon423.com')
+   w.close();q.processEvents()
+   other=app.Window();other.cover_timer.stop();other.show();q.processEvents()
+   self.assertEqual(other.sidebar.width(),68);self.assertFalse(other.right_rail.isVisible())
+   other.menu_toggle.click();other.rules_toggle.click();q.processEvents()
+   self.assertEqual(other.sidebar.width(),186);self.assertTrue(other.right_rail.isVisible());self.assertFalse(other.compact_download.isVisible())
+   other.close();q.processEvents()
  def test_large_page_range_is_bounded_and_jump_clamps(self):
   self.assertEqual(page_numbers(1,675),[1,2,3,4,5,675])
   self.assertEqual(page_numbers(674,675),[1,671,672,673,674,675])

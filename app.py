@@ -195,20 +195,30 @@ class Window(QMainWindow):
     def build(self):
         root = QWidget()
         self.setCentralWidget(root)
-        outer = QHBoxLayout(root)
+        shell=QVBoxLayout(root);shell.setContentsMargins(0,0,0,0);shell.setSpacing(0)
+        toolbar=QHBoxLayout();toolbar.setContentsMargins(12,7,12,7)
+        self.menu_toggle=button('☰ 메뉴 접기',self.toggle_menu);toolbar.addWidget(self.menu_toggle)
+        toolbar.addStretch()
+        self.compact_download=button('선택 작품 다운로드 ↓',self.start_download,True);toolbar.addWidget(self.compact_download)
+        self.rules_toggle=button('저장 규칙 숨기기',self.toggle_rules);toolbar.addWidget(self.rules_toggle)
+        shell.addLayout(toolbar)
+        outer = QHBoxLayout();shell.addLayout(outer,1)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         sidebar = QFrame()
+        self.sidebar=sidebar;self.sidebar_buttons=[];self.sidebar_labels=[]
         sidebar.setObjectName('sidebar')
         sidebar.setFixedWidth(186)
         side = QVBoxLayout(sidebar)
+        self.sidebar_layout=side
         side.setContentsMargins(19, 30, 19, 24)
-        side.addWidget(label('◈  ToonShelf', 'accent', 21))
-        side.addWidget(label('나만의 작품 아카이브', 'muted'))
+        self.brand=label('◈  ToonShelf', 'accent', 21);side.addWidget(self.brand)
+        subtitle=label('나만의 작품 아카이브','muted');side.addWidget(subtitle);self.sidebar_labels.append(subtitle)
         side.addSpacing(38)
         nav = button('▦   사이트 작품 목록', self.show_catalog)
         nav.setObjectName('activeNav')
         self.catalog_nav=nav
+        self.sidebar_buttons.append((nav,nav.text()))
         side.addWidget(nav)
         for text, action in [('▣   다운로드 작품', self.show_offline), ('↗   보관함·내보내기', self.history), ('≡   다운로드 대기열', self.queue_dialog),
                              ('◷   종료 예약', self.power_dialog), ('♡   친구 추천', self.community_dialog),
@@ -217,11 +227,13 @@ class Window(QMainWindow):
             b.setObjectName('nav')
             if action==self.show_offline:self.library_nav=b
             side.addWidget(b)
+            self.sidebar_buttons.append((b,text));b.setToolTip(text.strip());b.setAccessibleName(text.strip())
         side.addStretch()
-        side.addWidget(label('TOONSHELF  /  '+VERSION, 'muted'))
+        version_label=label('TOONSHELF  /  '+VERSION,'muted');side.addWidget(version_label);self.sidebar_labels.append(version_label)
         note = label('원본을 보존하고\n회차별로 정리합니다.', 'muted')
         note.setWordWrap(True)
         side.addWidget(note)
+        self.sidebar_labels.append(note)
         outer.addWidget(sidebar)
         center = QWidget()
         main = QVBoxLayout(center)
@@ -293,6 +305,7 @@ class Window(QMainWindow):
         download_layout.setContentsMargins(0,0,0,0);download_layout.addWidget(center,1)
         self.content_stack.addWidget(self.download_page);outer.addWidget(self.content_stack,1)
         rail = QWidget()
+        self.right_rail=rail
         rail.setFixedWidth(307)
         right = QVBoxLayout(rail)
         right.setContentsMargins(0, 27, 22, 24)
@@ -381,11 +394,31 @@ class Window(QMainWindow):
         self.logs.setMaximumBlockCount(700)
         right.addWidget(self.logs, 1)
         download_layout.addWidget(rail)
+        self.set_menu_compact(bool(self.cfg.get('menu_compact',False)),persist=False)
+        self.set_rules_hidden(bool(self.cfg.get('rules_hidden',False)),persist=False)
         self.render()
         self.update_disk()
 
     def persist_settings(self):
         (STATE/'settings.json').write_text(json.dumps(self.cfg,ensure_ascii=False,indent=2),encoding='utf-8')
+
+    def toggle_menu(self):self.set_menu_compact(not self.cfg.get('menu_compact',False))
+    def set_menu_compact(self,compact,persist=True):
+        self.cfg['menu_compact']=compact;self.sidebar.setFixedWidth(68 if compact else 186)
+        self.sidebar_layout.setContentsMargins(8 if compact else 19,30,8 if compact else 19,24)
+        self.brand.setText('◈' if compact else '◈  ToonShelf')
+        for widget in self.sidebar_labels:widget.setVisible(not compact)
+        for widget,text in self.sidebar_buttons:
+            widget.setText(text.strip()[0] if compact else text);widget.setToolTip(text.strip());widget.setAccessibleName(text.strip())
+        self.menu_toggle.setText('☰ 메뉴 펼치기' if compact else '☰ 메뉴 접기')
+        if persist:self.persist_settings()
+
+    def toggle_rules(self):self.set_rules_hidden(not self.cfg.get('rules_hidden',False))
+    def set_rules_hidden(self,hidden,persist=True):
+        self.cfg['rules_hidden']=hidden;self.right_rail.setVisible(not hidden)
+        self.rules_toggle.setText('저장 규칙 표시' if hidden else '저장 규칙 숨기기')
+        self.compact_download.setVisible(hidden)
+        if persist:self.persist_settings()
 
     def save_settings_clicked(self):
         try:
@@ -416,6 +449,7 @@ class Window(QMainWindow):
         cfg['output_dir']=str(Path(cfg['output_dir']).expanduser().resolve())
         cfg['library_roots']=list(dict.fromkeys([cfg['output_dir']]+cfg.get('library_roots',[])))
         self.cfg.update(cfg)
+        self.url.setText(cfg['site_url'])
         cfg=self.cfg
         (STATE / 'settings.json').write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
         return cfg
@@ -884,8 +918,9 @@ class Window(QMainWindow):
         if getattr(self,'offline',None) is not None:self.offline.canvas.update()
         if persist:self.persist_settings()
     def show_catalog(self):
-        self.content_stack.setCurrentWidget(self.download_page);self.set_page_nav(False)
+        self.content_stack.setCurrentWidget(self.download_page);self.set_page_nav(False);self.compact_download.setEnabled(True)
     def show_offline(self):
+        self.compact_download.setEnabled(False)
         from reading_ui import OfflineLibrary
         if getattr(self,'offline',None) is None:
             self.offline=OfflineLibrary(self);self.content_stack.addWidget(self.offline)

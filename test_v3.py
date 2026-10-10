@@ -65,6 +65,21 @@ class V3Tests(unittest.TestCase):
         with self.assertRaises(ValueError):apply_request({}, {'action':'site_add','name':'x','url':'javascript:alert(1)'},'owner','owner',1)
         self.assertTrue(issue_link('owner/repo',{'action':'vote','id':'1'}).startswith('https://github.com/owner/repo/issues/new?'))
         self.assertGreater(version_tuple('v3.0.0'),version_tuple('2.0.1'))
+    def test_pasted_site_link_is_normalized_across_input_paths(self):
+        from core import validate_url
+        from community_rules import url
+        for value in ['https://blacktoon423.com','http://blacktoon423.com','[https://blacktoon423.com](https://blacktoon423.com)','<https://blacktoon423.com>','blacktoon423.com','\ufeffhttps://blacktoon423.com\u200b']:
+            expected='http://blacktoon423.com' if value.startswith('http:') else 'https://blacktoon423.com'
+            self.assertEqual(url(value),expected);self.assertEqual(validate_url(value),expected)
+        request={'action':'site_add','name':'블랙툰','url':'[주소](https://blacktoon423.com)','news_url':'[안내](https://example.com/news?a=1#new)'}
+        result=apply_request({},request,'owner','owner','paste')
+        self.assertEqual(result['sites'][0]['url'],'https://blacktoon423.com')
+        self.assertEqual(result['sites'][0]['news_url'],'https://example.com/news?a=1#new')
+        self.assertEqual(url('example.com:8443/path'),'https://example.com:8443/path')
+    def test_pasted_link_does_not_allow_unsafe_destinations(self):
+        from link_input import normalize_url
+        for value in ['javascript:alert(1)','file:///C:/','[주소](javascript:alert(1))','https://user:secret@example.com','https://example.com:99999','https://bad host.com','https://example.com\\evil','']:
+            with self.subTest(value=value),self.assertRaises(ValueError):normalize_url(value)
     def test_verified_update_and_zip_traversal(self):
         for name,valid in [('ToonShelf/ToonShelf.exe',True),('../escape.exe',False)]:
             memory=io.BytesIO()
