@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import shutil
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QDialog,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,
     QLineEdit,QComboBox,QCheckBox,QTableWidget,QTableWidgetItem,QHeaderView,QAbstractItemView,
@@ -62,10 +62,12 @@ class LibraryDialog(QDialog):
         self.task=None
         self.cfg=parent.cfg
         self.prefs=self.cfg.setdefault('library_view',{'upload':True,'download':True,'size':True,'timezone':'seoul'})
-        self.setWindowTitle('ToonShelf 2.0 · 내 보관함 / 기기용 내보내기')
+        self.setWindowTitle('ToonShelf · 내 보관함 / 기기용 내보내기')
         self.resize(1320,870)
         self.build()
-        self.refresh()
+        self.activity.setText('보관함 불러오는 중… 잠시 기다려 주세요.')
+        self.progress.setRange(0,0)
+        QTimer.singleShot(0,self.refresh)
 
     def build(self):
         layout=QVBoxLayout(self)
@@ -176,13 +178,13 @@ class LibraryDialog(QDialog):
 
     def refresh(self):
         if self.task and self.task.isRunning():return
-        self.rows=[]
-        if (self.root/'.toonshelf.sqlite3').is_file():
-            archive=LibraryArchive(self.root)
-            try:
-                archive.seed_catalog(self.host.works)
-                self.rows=archive.works()
-            finally:archive.close()
+        from reading import shelf_index
+        root=self.root;catalog=list(self.host.works)
+        self.progress.setRange(0,0);self.activity.setText('보관함 불러오는 중 · 기록된 회차와 용량을 읽습니다…')
+        self.run_task(lambda c,e:shelf_index(root,catalog,c,e,False),'refresh')
+
+    def apply_rows(self,rows):
+        self.rows=rows
         self.genre.blockSignals(True);self.publisher.blockSignals(True)
         g,p=self.genre.currentText(),self.publisher.currentText()
         self.genre.clear();self.genre.addItems(['모든 장르']+sorted({i for w in self.rows for i in genres(w['genre'])}))
@@ -222,9 +224,7 @@ class LibraryDialog(QDialog):
         selected=self.selected_keys()
         if not selected:return
         self.current_key=selected[0]
-        archive=LibraryArchive(self.root)
-        try:episodes=archive.episodes(self.current_key)
-        finally:archive.close()
+        episodes=next((w['chapters'] for w in self.rows if w['key']==self.current_key),[])
         self.episode_table.setRowCount(len(episodes))
         status={'complete':'완료','partial':'일부 실패','pending':'대기','failed':'실패','interrupted':'중단'}
         for r,e in enumerate(episodes):
@@ -264,12 +264,14 @@ class LibraryDialog(QDialog):
         self.task=LibraryTask(operation)
         self.task.event.connect(self.on_event)
         self.task.done.connect(lambda state,result:self.finished_task(kind,state,result))
-        self.task.finished.connect(lambda:(self.set_busy(False),self.refresh()))
+        self.task.finished.connect(lambda:(self.set_busy(False),QTimer.singleShot(0,self.refresh) if kind!='refresh' else None))
         self.set_busy(True);self.task.start()
+        self.progress.setRange(0,0)
 
     def set_busy(self,busy):
         for w in [self.property_button,self.verify_button,self.export_button,self.root_combo]:w.setEnabled(not busy)
         self.stop_button.setEnabled(busy)
+        if busy:self.activity.setText('로딩 중 · 준비 또는 작업을 진행하고 있습니다…')
 
     def verify(self):
         keys=self.selected_keys()
@@ -331,6 +333,9 @@ class LibraryDialog(QDialog):
         elif kind=='export_progress':self.progress.setRange(0,value['total']);self.progress.setValue(value['value'])
 
     def finished_task(self,kind,state,result):
+        self.progress.setRange(0,100);self.progress.setValue(100 if state=='success' else 0)
+        if state=='success' and kind=='refresh':
+            self.apply_rows(result);self.activity.setText('보관함 준비 완료 · 작품과 회차를 선택하세요.');return
         if state=='success' and kind=='export':
             self.activity.setText(f"내보내기 완료 · {result['episode_count']}회차 / {result['image_count']}장 · 원본 {size_text(result['source_bytes'])} → 결과 {size_text(result['output_bytes'])}")
             self.last_export=result

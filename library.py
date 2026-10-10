@@ -157,7 +157,7 @@ class LibraryArchive(Archive):
         self.db.execute('UPDATE works SET genre_override=?,publisher_override=? WHERE key=?', (genre,publisher,key))
         self.db.commit()
 
-    def works(self):
+    def works(self, verify_files=True):
         rows=[dict(row) for row in self.db.execute('''SELECT w.key,w.title,w.url,w.cover,
             COALESCE(w.genre_override,w.genre) AS genre,COALESCE(w.publisher_override,w.publisher) AS publisher,
             COUNT(DISTINCT i.episode_key) AS episodes,COUNT(i.key) AS images,COALESCE(SUM(i.size),0) AS size,
@@ -166,6 +166,8 @@ class LibraryArchive(Archive):
             FROM works w JOIN episodes e ON e.work_key=w.key JOIN images i ON i.episode_key=e.key
             GROUP BY w.key ORDER BY last_downloaded DESC,w.title''')]
         for w in rows:
+            if not verify_files:
+                w['expected_size']=w['size'];w['missing']=0;continue
             w['expected_size']=w['size'];w['size']=0;w['missing']=0
             for row in self.db.execute('SELECT i.path FROM images i JOIN episodes e ON e.key=i.episode_key WHERE e.work_key=?',(w['key'],)):
                 path=(self.root/row['path']).resolve()
@@ -173,11 +175,13 @@ class LibraryArchive(Archive):
                 else:w['missing']+=1
         return rows
 
-    def episodes(self, work_key):
+    def episodes(self, work_key, verify_files=True):
         rows=[dict(row) for row in self.db.execute('''SELECT e.*,COUNT(i.key) AS images,COALESCE(SUM(i.size),0) AS size
             FROM episodes e JOIN images i ON i.episode_key=e.key WHERE work_key=? GROUP BY e.key
             ORDER BY CASE WHEN e.sequence>0 THEN e.sequence ELSE e.number END,e.folder''',(work_key,))]
         for e in rows:
+            if not verify_files:
+                e['expected_size']=e['size'];e['missing']=0;continue
             e['expected_size']=e['size'];e['size']=0;e['missing']=0
             for row in self.db.execute('SELECT path FROM images WHERE episode_key=?',(e['key'],)):
                 path=(self.root/row['path']).resolve()

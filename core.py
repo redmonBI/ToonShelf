@@ -412,6 +412,7 @@ def download(cfg, works, control, emit):
     from library import LibraryArchive
     archive = LibraryArchive(Path(cfg['output_dir']))
     totals = {'saved': 0, 'skipped': 0, 'filtered': 0, 'failed': 0, 'episodes': 0}
+    processed_images=0;seen_images=0
     try:
         with Browser(cfg, control, emit) as browser:
             plans = []
@@ -437,6 +438,8 @@ def download(cfg, works, control, emit):
                     if not urls:
                         raise RuntimeError('본문 이미지가 없습니다.')
                     archive.record_order(work, episode, urls)
+                    seen_images+=len(urls)
+                    estimated_images=max(seen_images,round(seen_images/(index+1)*len(plans)))
                     for n, url in enumerate(urls):
                         control.check()
                         emit('image_progress', {'index': n+1, 'total': len(urls)})
@@ -444,9 +447,12 @@ def download(cfg, works, control, emit):
                         if archive.existing(key):
                             totals['skipped'] += 1
                             consecutive_denials = 0
+                            processed_images+=1;emit('transfer_progress',{'bytes':0,'completed':processed_images,'total':estimated_images})
                             continue
+                        received_bytes=0
                         try:
                             data = browser.fetch(url, episode.url)
+                            received_bytes=len(data)
                             consecutive_denials = 0
                             path = archive.save(work, episode, url, data, (cfg['min_width'], cfg['min_height']), n+1)
                             if path:
@@ -470,6 +476,7 @@ def download(cfg, works, control, emit):
                             totals['failed'] += 1
                             errors.append(f'{url}: {exc}')
                             emit('log', f'이미지 실패: {exc}')
+                        processed_images+=1;emit('transfer_progress',{'bytes':received_bytes,'completed':processed_images,'total':estimated_images})
                         control.delay(cfg.get('delay', .25))
                     archive.episode_status(work, episode, 'partial' if errors else 'complete', json.dumps(errors, ensure_ascii=False))
                 except Cancelled:

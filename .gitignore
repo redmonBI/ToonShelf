@@ -8,3 +8,7 @@ __pycache__/
 *.zip
 SHA256SUMS.txt
 *.png
+Vendor/
+ThirdParty/
+reading_preview.png
+viewer_preview.png

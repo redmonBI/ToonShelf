@@ -16,7 +16,7 @@ from PySide6.QtGui import QFont, QPixmap, QColor
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QLabel,
     QPushButton, QLineEdit, QCheckBox, QSpinBox, QDoubleSpinBox, QVBoxLayout,
     QHBoxLayout, QGridLayout, QScrollArea, QFileDialog, QProgressBar, QPlainTextEdit,
-    QMessageBox, QDialog, QFormLayout, QComboBox)
+    QMessageBox, QDialog, QFormLayout, QComboBox, QStackedWidget)
 
 from core import Browser, Work, Control, Cancelled, download, validate_url
 
@@ -62,6 +62,15 @@ QHeaderView::section { background:#243345; color:#b8d6cf; border:0; padding:9px;
 QTableWidget::item { padding:7px; }
 '''
 
+
+for old,new in {'#101319':'#f5f5f7','#e8edf3':'#1d1d1f','#0b0e13':'#eceef2',
+ '#171c25':'#ffffff','#191f29':'#ffffff','#232c39':'#ffffff','#303c4d':'#e8efff',
+ '#79e0bb':'#007aff','#0c2920':'#ffffff','#9cf0ce':'#409cff','#70e0bd':'#007aff',
+ '#162c27':'#e4efff','#89e5c4':'#007aff','#0f141d':'#ffffff','#121721':'#ffffff',
+ '#17212e':'#ffffff','#182230':'#ffffff','#101720':'#ffffff','#192330':'#f0f2f6',
+ '#243345':'#e9edf4','#b8d6cf':'#333b49','#2a594c':'#d9e9ff','#2d6654':'#d9e9ff',
+ '#354151':'#d9dde4','#29313c':'#d9dde4','#2c3542':'#d9dde4','#94a3b7':'#596579',
+ '#8e9bab':'#6b7280','#0c1118':'#e5e8ee','#0d121a':'#ffffff','#a6b6c9':'#4c596c'}.items():STYLE=STYLE.replace(old,new)
 
 def label(text, name=None, size=None):
     widget = QLabel(text)
@@ -234,14 +243,16 @@ class Window(QMainWindow):
         side.addWidget(label('◈  ToonShelf', 'accent', 21))
         side.addWidget(label('나만의 작품 아카이브', 'muted'))
         side.addSpacing(38)
-        nav = button('▦   작품 라이브러리', lambda: self.search.setFocus())
+        nav = button('▦   사이트 작품 목록', self.show_catalog)
         nav.setObjectName('activeNav')
+        self.catalog_nav=nav
         side.addWidget(nav)
-        for text, action in [('▣   내 보관함·내보내기', self.history), ('≡   다운로드 대기열', self.queue_dialog),
+        for text, action in [('▣   다운로드 작품', self.show_offline), ('↗   보관함·내보내기', self.history), ('≡   다운로드 대기열', self.queue_dialog),
                              ('◷   종료 예약', self.power_dialog), ('♡   친구 추천', self.community_dialog),
                              ('↗   사이트·최신 링크', self.sites_dialog), ('⚙   세부 설정', self.settings), ('↗   저장 폴더', self.open_folder)]:
             b = button(text, action)
             b.setObjectName('nav')
+            if action==self.show_offline:self.library_nav=b
             side.addWidget(b)
         side.addStretch()
         side.addWidget(label('TOONSHELF  /  '+VERSION, 'muted'))
@@ -321,7 +332,9 @@ class Window(QMainWindow):
         pages.addStretch()
         pages.addWidget(button('다음 →', lambda: self.turn_page(1)))
         main.addLayout(pages)
-        outer.addWidget(center, 1)
+        self.content_stack=QStackedWidget();self.download_page=QWidget();download_layout=QHBoxLayout(self.download_page)
+        download_layout.setContentsMargins(0,0,0,0);download_layout.addWidget(center,1)
+        self.content_stack.addWidget(self.download_page);outer.addWidget(self.content_stack,1)
         rail = QWidget()
         rail.setFixedWidth(307)
         right = QVBoxLayout(rail)
@@ -391,6 +404,9 @@ class Window(QMainWindow):
         pr.addWidget(self.image_progress)
         self.stats = label('신규 0   ·   기존 0   ·   실패 0', 'accent')
         pr.addWidget(self.stats)
+        from download_metrics import DownloadMetrics
+        self.download_meter=DownloadMetrics();self.speed_label=label('속도 — · 남은 시간 계산 중','muted');self.speed_label.setWordWrap(True);pr.addWidget(self.speed_label)
+        self.speed_timer=QTimer(self);self.speed_timer.timeout.connect(self.refresh_speed);self.speed_timer.start(1000)
         self.volume = label('저장 용량 0.0 MB', 'muted')
         pr.addWidget(self.volume)
         row = QHBoxLayout()
@@ -407,7 +423,7 @@ class Window(QMainWindow):
         self.logs.setReadOnly(True)
         self.logs.setMaximumBlockCount(700)
         right.addWidget(self.logs, 1)
-        outer.addWidget(rail)
+        download_layout.addWidget(rail)
         self.render()
         self.update_disk()
 
@@ -687,6 +703,8 @@ class Window(QMainWindow):
         elif kind == 'progress':
             self.progress.setValue(value['value'])
             self.stats.setText(f"신규 {value['saved']} · 기존 {value['skipped']} · 제외 {value['filtered']} · 실패 {value['failed']}")
+        elif kind=='transfer_progress':
+            self.download_meter.record(value);self.refresh_speed()
 
     def on_done(self, kind, value):
         if kind == 'error':
@@ -731,6 +749,7 @@ class Window(QMainWindow):
         layout.addRow('이미지 요청 사이 대기(초)', delay)
         layout.addRow('브라우저', browser)
         layout.addRow('본문 이미지 선택자', selector)
+        layout.addRow(button('읽기 뷰어 설정 · 내장 / OpenComic',self.reader_settings))
         layout.addRow(label('기본값은 확인된 본문 영역만 선택합니다.\n사이트 구조가 달라지면 이 값을 수정할 수 있습니다.', 'muted'))
         def save():
             from bs4 import BeautifulSoup
@@ -755,6 +774,8 @@ class Window(QMainWindow):
         LibraryDialog(self).exec()
 
     def closeEvent(self, event):
+        if getattr(self,'offline',None) is not None and not self.offline.shutdown():
+            self.status.setText('뷰어 작업 정리 중 · 잠시 후 다시 닫아주세요');event.ignore();return
         if self.queue_job:
             self.queue_running=False;self.queue_reason='stopped';self.queue_job.control.stopped.set()
             self.status.setText('대기열 기록 저장 중 · 잠시 후 다시 닫아주세요');event.ignore();return
@@ -811,7 +832,7 @@ class Window(QMainWindow):
     def queue_event(self,kind,value):
         r=next(r for r in self.queue.rows() if r['id']==self.active_id)
         p=r['progress'];p[kind]=value
-        if kind in ['current','image_progress','progress','saved']:self.queue.change(self.active_id,progress=p)
+        if kind in ['current','image_progress','progress','saved','transfer_progress']:self.queue.change(self.active_id,progress=p)
         self.on_event(kind,value)
     def queue_done(self,kind,result):
         id=self.active_id;r=next(r for r in self.queue.rows() if r['id']==id)
@@ -829,7 +850,7 @@ class Window(QMainWindow):
         if self.queue_running and self.queue_job is None:
             row=self.queue.next()
             if row:
-                self.active_id=row['id'];self.queue_reason=None
+                self.active_id=row['id'];self.queue_reason=None;self.download_meter.reset()
                 self.queue.change(row['id'],'running',attempts=row['attempts']+1)
                 self.queue_job=Job('download',row['cfg'],[Work(**row['work'])]);self.queue_job.event.connect(self.queue_event)
                 self.queue_job.done.connect(self.queue_done);self.queue_job.finished.connect(self.queue_finished)
@@ -889,6 +910,45 @@ class Window(QMainWindow):
             self.update_button.setToolTip(self.latest_release.get('body') or '')
         else:self.update_button.setText('v'+VERSION+' · 최신 버전')
 
+    def set_page_nav(self,library):
+        for widget,active in [(self.catalog_nav,not library),(self.library_nav,library)]:
+            widget.setObjectName('activeNav' if active else 'nav');widget.style().unpolish(widget);widget.style().polish(widget)
+    def show_catalog(self):
+        self.content_stack.setCurrentWidget(self.download_page);self.set_page_nav(False)
+    def show_offline(self):
+        from reading_ui import OfflineLibrary
+        if getattr(self,'offline',None) is None:
+            self.offline=OfflineLibrary(self);self.content_stack.addWidget(self.offline)
+        self.content_stack.setCurrentWidget(self.offline)
+        self.set_page_nav(True)
+        if not self.offline.rows:self.offline.refresh()
+    def opencomic_path(self):
+        configured=self.cfg.get('opencomic_exe','')
+        bundled=APP_DIR/'Vendor'/'OpenComic'/'OpenComic.exe'
+        return configured if configured and Path(configured).is_file() else str(bundled) if bundled.is_file() else ''
+    def reader_settings(self):
+        d=QDialog(self);d.setWindowTitle('읽기 뷰어 설정');d.resize(600,300);form=QFormLayout(d)
+        mode=QComboBox();mode.addItems(['프로그램 안에서 세로로 읽기','OpenComic 별도 창으로 읽기']);mode.setCurrentIndex(self.cfg.get('reader_mode')=='opencomic')
+        path=QLineEdit(self.opencomic_path());row=QHBoxLayout();row.addWidget(path)
+        def pick():
+            selected,_=QFileDialog.getOpenFileName(d,'OpenComic 실행 파일 선택',path.text(),'실행 파일 (*.exe)')
+            if selected:path.setText(selected)
+        row.addWidget(button('찾기',pick));form.addRow('작품 클릭 시',mode);form.addRow('OpenComic',row)
+        form.addRow(label('내장: 세로 스크롤 · 읽던 위치 복원 · 이전/다음 화\nOpenComic: 별도 창 · 숫자 순서 읽기용 폴더 연결\nAlt+← / Alt+→ 로 회차를 이동합니다.','muted'))
+        def save():
+            if mode.currentIndex() and (not Path(path.text()).is_file() or Path(path.text()).suffix.lower()!='.exe'):
+                QMessageBox.warning(d,'뷰어 확인','OpenComic 실행 파일을 선택하세요.');return
+            self.cfg.update(reader_mode='opencomic' if mode.currentIndex() else 'embedded',opencomic_exe=path.text());self.persist_settings();d.accept()
+        form.addRow(button('설정 저장',save,True));d.exec()
+    def refresh_speed(self):
+        from download_metrics import duration
+        from library import size_text
+        active=self.queue_job or (self.job if self.job and self.job.kind=='download' else None)
+        self.download_meter.pause(bool(active and active.control.paused.is_set()))
+        value=self.download_meter.snapshot()
+        if active:self.speed_label.setText('일시정지 · 예상 시간 대기' if value['paused'] else f"실효 속도 {size_text(value['speed'])}/초\n현재 작품 예상 남은 시간 {duration(value['remaining'])}")
+        else:self.speed_label.setText('속도 — · 다운로드 대기 중')
+
 
 def main():
     app = QApplication(sys.argv)
@@ -926,6 +986,14 @@ def main():
             dialog=LibraryDialog(window)
             window.mobile_dialog=dialog
             dialog.show()
+            def continue_mobile_test():
+                if dialog.task and dialog.task.isRunning():
+                    QTimer.singleShot(50,continue_mobile_test);return
+                finish_mobile_test(dialog)
+            QTimer.singleShot(50,continue_mobile_test)
+        def finish_mobile_test(dialog):
+            from library_ui import LibraryTask
+            from library import export_mobile,size_text
             if not dialog.rows:
                 (STATE/'packaged_v2_error.txt').write_text('검증 자료가 없습니다.',encoding='utf-8')
                 app.quit();return

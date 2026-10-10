@@ -18,6 +18,8 @@ with ZipFile(target,'w',ZIP_DEFLATED,compresslevel=6) as z:
         if p.is_file() and (p.name=='ToonShelf.exe' or '_internal' in p.relative_to(release).parts or
            p.name in ['README.md','RELEASE_NOTES.md'] or p==state/'settings.json'):
             z.write(p,Path('ToonShelf')/p.relative_to(release))
+    for p in (root/'Vendor').rglob('*'):
+        if p.is_file():z.write(p,Path('ToonShelf')/p.relative_to(root))
     for p in root.glob('*.py'):
         if not p.name.startswith(('capture_','validate_','diagnose_')):z.write(p,Path('ToonShelf')/'Source'/p.name)
     for name in ['requirements.txt','ToonShelf.spec','install.bat','run.bat']:z.write(root/name,Path('ToonShelf')/'Source'/name)
