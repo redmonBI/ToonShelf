@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButto
 from library_ui import LibraryTask
 from library import size_text
 from reading import shelf_index,chapter_images,prepare_opencomic,opencomic
+from pagination import Pagination
+from themes import colors
 
 def btn(text,fn):
     b=QPushButton(text);b.clicked.connect(fn);return b
@@ -61,7 +63,7 @@ class ComicCanvas(QWidget):
                 _,im=self.cache.popitem(last=False);self.cache_bytes-=im.sizeInBytes()
         self.update()
     def paintEvent(self,event):
-        painter=QPainter(self);painter.fillRect(event.rect(),QColor('#ffffff'));painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        painter=QPainter(self);painter.fillRect(event.rect(),self.palette().window());painter.setRenderHint(QPainter.SmoothPixmapTransform)
         start=max(0,bisect_right(self.offsets,event.rect().top())-1)
         for i in range(start,len(self.items)):
             if self.offsets[i]>event.rect().bottom():break
@@ -69,14 +71,13 @@ class ComicCanvas(QWidget):
             if i in self.cache:
                 self.cache.move_to_end(i);painter.drawImage(rect,self.cache[i])
             else:
-                painter.setPen(QColor('#86868b'));message=self.items[i]['error'] or self.errors.get(i) or f'이미지 {i+1} 불러오는 중…'
+                painter.setPen(self.palette().text().color());message=self.items[i]['error'] or self.errors.get(i) or f'이미지 {i+1} 불러오는 중…'
                 painter.drawText(rect,Qt.AlignCenter,message)
         painter.end()
 
 class OfflineLibrary(QWidget):
     def __init__(self,host):
-        super().__init__();self.host=host;self.rows=[];self.task=None;self.work=None;self.chapter=0;self.page=0;self.images=[];self.mirrors=[];self.mirror_work=None;self.popup=None
-        self.setStyleSheet('QWidget {background:#f5f5f7;color:#1d1d1f;font-family:"Segoe UI";} QLabel{background:transparent;} QPushButton{background:#fff;border:1px solid #d9dde4;border-radius:12px;padding:10px;} QPushButton:hover{background:#e8efff;} QLineEdit,QComboBox{background:white;color:#1d1d1f;border:1px solid #d9dde4;border-radius:10px;padding:10px;}')
+        super().__init__();self.host=host;self.rows=[];self.task=None;self.work=None;self.chapter=0;self.page=0;self.images=[];self.mirrors=[];self.mirror_work=None;self.popup=None;self.closed=False
         lay=QVBoxLayout(self);lay.setContentsMargins(28,24,28,24)
         header=QHBoxLayout();title=QLabel('내 작품 라이브러리');title.setStyleSheet('font-size:28px;font-weight:700');header.addWidget(title);header.addStretch()
         header.addWidget(btn('새로고침',self.refresh));header.addWidget(btn('뷰어 설정',host.reader_settings));header.addWidget(btn('다운로드 화면',host.show_catalog));lay.addLayout(header)
@@ -89,7 +90,7 @@ class OfflineLibrary(QWidget):
         self.sort=QComboBox();self.sort.addItems(['최근 다운로드순','작품 이름순','용량 큰 순']);self.sort.currentIndexChanged.connect(self.filter)
         tools.addWidget(self.search,1);tools.addWidget(self.genre);tools.addWidget(self.sort);sl.addLayout(tools)
         self.shelf_scroll=QScrollArea();self.shelf_scroll.setWidgetResizable(True);self.grid_widget=QWidget();self.grid=QGridLayout(self.grid_widget);self.grid.setAlignment(Qt.AlignTop);self.shelf_scroll.setWidget(self.grid_widget);sl.addWidget(self.shelf_scroll,1)
-        pages=QHBoxLayout();pages.addWidget(btn('← 이전',lambda:self.turn_page(-1)));self.page_label=QLabel();pages.addWidget(self.page_label);pages.addStretch();pages.addWidget(btn('다음 →',lambda:self.turn_page(1)));sl.addLayout(pages);self.stack.addWidget(shelf)
+        self.pager=Pagination();self.pager.requested.connect(self.go_page);sl.addWidget(self.pager);self.stack.addWidget(shelf)
         reader=QWidget();rl=QVBoxLayout(reader);bar=QHBoxLayout();bar.addWidget(btn('‹ 라이브러리',self.back));self.prev=btn('이전 화',lambda:self.move(-1));bar.addWidget(self.prev)
         self.chapters=QComboBox();self.chapters.currentIndexChanged.connect(self.select_chapter);bar.addWidget(self.chapters,1)
         self.next=btn('다음 화',lambda:self.move(1));bar.addWidget(self.next);bar.addWidget(btn('OpenComic으로 열기',self.external));rl.addLayout(bar)
@@ -123,24 +124,26 @@ class OfflineLibrary(QWidget):
         self.status.setText(f"{len(rows)}개 작품 · {sum(w['episodes'] for w in rows)}회차 · {size_text(sum(w['size'] for w in rows))}");self.filter()
     def filter(self):self.page=0;self.render()
     def turn_page(self,step):
-        count=max(1,(len(self.filtered())+11)//12);self.page=max(0,min(count-1,self.page+step));self.render()
+        self.go_page(self.page+step)
+    def go_page(self,index):
+        count=max(1,(len(self.filtered())+11)//12);self.page=max(0,min(count-1,index));self.render();self.shelf_scroll.verticalScrollBar().setValue(0)
     def filtered(self):
         rows=[w for w in self.rows if self.search.text().casefold() in w['title'].casefold() and (self.genre.currentIndex()==0 or self.genre.currentText() in w['genre'].replace(',',' ').split())]
         i=self.sort.currentIndex();rows.sort(key=lambda w:w['title'] if i==1 else w['size'] if i==2 else w['last_downloaded'] or '',reverse=i!=1);return rows
     def render(self):
         while self.grid.count():
             item=self.grid.takeAt(0)
-            if item.widget():item.widget().deleteLater()
-        rows=self.filtered();self.page_label.setText(f'{self.page+1} / {max(1,(len(rows)+11)//12)}')
+            if item.widget():item.widget().hide();item.widget().deleteLater()
+        rows=self.filtered();self.page=min(self.page,max(0,(len(rows)-1)//12));self.pager.update_pages(self.page,max(1,(len(rows)+11)//12))
         for n,w in enumerate(rows[self.page*12:self.page*12+12]):
-            card=QFrame();card.setStyleSheet('QFrame{background:white;border:1px solid #e1e5eb;border-radius:18px;} QLabel{border:0;}');cl=QVBoxLayout(card);cl.setContentsMargins(18,18,18,18)
+            card=QFrame();card.setObjectName('libraryCard');cl=QVBoxLayout(card);cl.setContentsMargins(18,18,18,18)
             art=QLabel();art.setAlignment(Qt.AlignCenter);art.setFixedHeight(150)
             if w.get('thumbnail_image') is not None:
                 from PySide6.QtGui import QPixmap
                 art.setPixmap(QPixmap.fromImage(w['thumbnail_image']).scaled(300,150,Qt.KeepAspectRatio,Qt.SmoothTransformation))
             else:art.setText('표지 없음')
             cl.addWidget(art);title=QLabel(w['title']);title.setWordWrap(True);title.setStyleSheet('font-size:16px;font-weight:700');cl.addWidget(title)
-            meta=QLabel((w['genre'] or '미분류')+' · '+(w['publisher'] or '미분류'));meta.setStyleSheet('color:#6e7480');cl.addWidget(meta)
+            meta=QLabel((w['genre'] or '미분류')+' · '+(w['publisher'] or '미분류'));meta.setObjectName('muted');cl.addWidget(meta)
             cl.addWidget(QLabel(f"{w['episodes']}회차 · 기록 용량 {size_text(w['size'])}"));cl.addWidget(btn('계속 읽기  →',lambda checked=False,w=w:self.open_work(w)))
             card.setMinimumWidth(180)
             self.grid.addWidget(card,n//3,n%3)
@@ -178,11 +181,12 @@ class OfflineLibrary(QWidget):
             fraction=self.restore_fraction;self.restore_fraction=None;bar.setValue(int(fraction*bar.maximum()))
     def resizeEvent(self,event):
         super().resizeEvent(event)
-        if hasattr(self,'resize_timer'):self.resize_timer.start(180)
+        if hasattr(self,'resize_timer') and not self.closed:self.resize_timer.start(180)
     def scrolled(self):
+        if self.closed:return
         self.canvas.ensure_visible();bar=self.read_scroll.verticalScrollBar();self.position.setText(f'{round(bar.value()/max(1,bar.maximum())*100)}%');self.progress_timer.start(500)
     def save_position(self):
-        if not self.work or not self.images or self.restore_fraction is not None:return
+        if self.closed or not self.work or not self.images or self.restore_fraction is not None:return
         bar=self.read_scroll.verticalScrollBar();key=self.work['chapters'][self.chapter]['key'];fraction=bar.value()/max(1,bar.maximum())
         positions=self.host.cfg.setdefault('reading_positions',{});pos=positions.setdefault(self.work['key'],{});pos.setdefault('offsets',{})[key]=fraction;pos.update(chapter=key,fraction=fraction);self.host.persist_settings()
     def back(self):self.save_position();self.stack.setCurrentIndex(0)
@@ -210,7 +214,7 @@ class OfflineLibrary(QWidget):
         self.chapters.blockSignals(True);self.chapters.setCurrentIndex(self.chapter);self.chapters.blockSignals(False)
         self.external()
     def shutdown(self):
-        self.save_position()
+        self.save_position();self.closed=True;self.progress_timer.stop();self.resize_timer.stop()
         if self.task and self.task.isRunning():self.task.control.stopped.set();return False
         self.canvas.generation+=1;self.canvas.pool.clear();self.canvas.pool.waitForDone(1000)
         return self.canvas.pool.activeThreadCount()==0

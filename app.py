@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QLabe
     QMessageBox, QDialog, QFormLayout, QComboBox, QStackedWidget)
 
 from core import Browser, Work, Control, Cancelled, download, validate_url
+from pagination import Pagination
+import themes
 
 APP_DIR = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
 STATE = APP_DIR / 'state'
@@ -29,48 +31,8 @@ DEFAULT = {'site_url': 'https://blacktoon423.com', 'output_dir': str(APP_DIR / '
            'delay': .25, 'visible_browser': False, 'image_selector': '#toon_content_imgs img',
            'library_roots': [], 'export_format':'cbz', 'export_optimize':False}
 
-STYLE = '''
-QWidget { background:#101319; color:#e8edf3; font-family:"Malgun Gothic"; font-size:12px; }
-QMainWindow { background:#101319; }
-QFrame#sidebar { background:#0b0e13; border-right:1px solid #262b35; }
-QFrame#panel { background:#171c25; border:1px solid #29313c; border-radius:14px; }
-QFrame#card { background:#191f29; border:1px solid #2c3542; border-radius:12px; }
-QLabel { background:transparent; }
-QLabel#muted { color:#8e9bab; }
-QLabel#accent { color:#70e0bd; }
-QLabel#title { font-size:26px; font-weight:700; }
-QPushButton { background:#232c39; border:1px solid #354151; border-radius:8px; padding:10px 14px; font-weight:600; }
-QPushButton:hover { background:#303c4d; border-color:#6b8b99; }
-QPushButton:disabled { color:#586475; background:#1a202b; }
-QPushButton#primary { background:#79e0bb; color:#0c2920; border:0; }
-QPushButton#primary:hover { background:#9cf0ce; }
-QPushButton#nav { text-align:left; border:0; background:transparent; color:#94a3b7; padding:12px; }
-QPushButton#activeNav { text-align:left; border:1px solid #2d4d45; background:#162c27; color:#89e5c4; padding:12px; }
-QLineEdit, QSpinBox, QDoubleSpinBox { background:#0f141d; border:1px solid #354151; border-radius:7px; padding:8px; selection-background-color:#326956; }
-QCheckBox { spacing:8px; background:transparent; }
-QCheckBox::indicator { width:17px; height:17px; border:1px solid #607087; border-radius:4px; background:#121721; }
-QCheckBox::indicator:checked { background:#79e0bb; border:1px solid #a6f4d6; }
-QScrollArea { border:0; background:transparent; }
-QProgressBar { background:#0c1118; border:0; border-radius:5px; height:10px; text-align:center; color:#dce9e3; }
-QProgressBar::chunk { background:#79e0bb; border-radius:5px; }
-QPlainTextEdit { background:#0d121a; border:1px solid #283340; border-radius:8px; color:#a6b6c9; font-size:11px; padding:8px; }
-QToolTip { color:#e8edf3; background:#26323f; border:1px solid #496078; }
-QComboBox { background:#17212e; border:1px solid #354151; border-radius:7px; padding:8px; min-width:115px; }
-QComboBox QAbstractItemView { background:#182230; color:#e8edf3; selection-background-color:#2d6654; }
-QTableWidget { background:#101720; alternate-background-color:#192330; gridline-color:#2a3644; border:1px solid #354151; selection-background-color:#2a594c; }
-QHeaderView::section { background:#243345; color:#b8d6cf; border:0; padding:9px; }
-QTableWidget::item { padding:7px; }
-'''
+STYLE = themes.stylesheet('white')
 
-
-for old,new in {'#101319':'#f5f5f7','#e8edf3':'#1d1d1f','#0b0e13':'#eceef2',
- '#171c25':'#ffffff','#191f29':'#ffffff','#232c39':'#ffffff','#303c4d':'#e8efff',
- '#79e0bb':'#007aff','#0c2920':'#ffffff','#9cf0ce':'#409cff','#70e0bd':'#007aff',
- '#162c27':'#e4efff','#89e5c4':'#007aff','#0f141d':'#ffffff','#121721':'#ffffff',
- '#17212e':'#ffffff','#182230':'#ffffff','#101720':'#ffffff','#192330':'#f0f2f6',
- '#243345':'#e9edf4','#b8d6cf':'#333b49','#2a594c':'#d9e9ff','#2d6654':'#d9e9ff',
- '#354151':'#d9dde4','#29313c':'#d9dde4','#2c3542':'#d9dde4','#94a3b7':'#596579',
- '#8e9bab':'#6b7280','#0c1118':'#e5e8ee','#0d121a':'#ffffff','#a6b6c9':'#4c596c'}.items():STYLE=STYLE.replace(old,new)
 
 def label(text, name=None, size=None):
     widget = QLabel(text)
@@ -159,7 +121,7 @@ class Card(QFrame):
         self.cover = QLabel()
         self.cover.setFixedHeight(172)
         self.cover.setAlignment(Qt.AlignCenter)
-        self.cover.setStyleSheet('background:#263445; border-radius:8px; color:#73958c; font-size:30px;')
+        self.cover.setObjectName('coverPlaceholder')
         self.cover.setText('TS')
         layout.addWidget(self.cover)
         self.check = QCheckBox(work.title if len(work.title) <= 17 else work.title[:16] + '…')
@@ -217,6 +179,7 @@ class Window(QMainWindow):
         self.resize(1450, 960)
         self.setMinimumSize(1180, 780)
         self.build()
+        self.apply_theme(self.cfg.get('theme','white'),persist=False)
         cached = STATE / 'catalog.json'
         if cached.exists():
             try:
@@ -316,6 +279,7 @@ class Window(QMainWindow):
         counts.addWidget(self.selected_label)
         main.addLayout(counts)
         scroll = QScrollArea()
+        self.catalog_scroll=scroll
         scroll.setWidgetResizable(True)
         self.grid_widget = QWidget()
         self.grid = QGridLayout(self.grid_widget)
@@ -324,14 +288,7 @@ class Window(QMainWindow):
         self.grid.setAlignment(Qt.AlignTop)
         scroll.setWidget(self.grid_widget)
         main.addWidget(scroll, 1)
-        pages = QHBoxLayout()
-        pages.addWidget(button('← 이전', lambda: self.turn_page(-1)))
-        pages.addStretch()
-        self.pages = label('1 / 1', 'muted')
-        pages.addWidget(self.pages)
-        pages.addStretch()
-        pages.addWidget(button('다음 →', lambda: self.turn_page(1)))
-        main.addLayout(pages)
+        self.pager=Pagination();self.pager.requested.connect(self.go_page);main.addWidget(self.pager)
         self.content_stack=QStackedWidget();self.download_page=QWidget();download_layout=QHBoxLayout(self.download_page)
         download_layout.setContentsMargins(0,0,0,0);download_layout.addWidget(center,1)
         self.content_stack.addWidget(self.download_page);outer.addWidget(self.content_stack,1)
@@ -576,9 +533,11 @@ class Window(QMainWindow):
         while self.grid.count():
             item = self.grid.takeAt(0)
             if item.widget():
+                item.widget().hide()
                 item.widget().deleteLater()
         self.cards = {}
         works = self.filtered()
+        self.page_index=min(self.page_index,max(0,(len(works)-1)//24))
         self.count.setText(f'작품 {len(works):,}개  ·  전체 {len(self.works):,}개')
         self.selected_label.setText(f'{len(self.selected)}개 선택')
         for i, work in enumerate(works[self.page_index*24:(self.page_index+1)*24]):
@@ -590,7 +549,7 @@ class Window(QMainWindow):
             empty.setAlignment(Qt.AlignCenter)
             empty.setMinimumHeight(300)
             self.grid.addWidget(empty, 0, 0, 1, 3)
-        self.pages.setText(f'{self.page_index+1} / {max(1, (len(works)+23)//24)}')
+        self.pager.update_pages(self.page_index,max(1,(len(works)+23)//24))
 
     def select(self, url, checked):
         self.selected.add(url) if checked else self.selected.discard(url)
@@ -608,9 +567,13 @@ class Window(QMainWindow):
         self.selected_label.setText('0개 선택')
 
     def turn_page(self, delta):
+        self.go_page(self.page_index+delta)
+
+    def go_page(self,index):
         maximum = max(0, (len(self.filtered())-1)//24)
-        self.page_index = max(0, min(maximum, self.page_index+delta))
+        self.page_index = max(0, min(maximum,index))
         self.render()
+        self.catalog_scroll.verticalScrollBar().setValue(0)
         missing = [w for w in self.filtered()[self.page_index*24:(self.page_index+1)*24] if not w.cover]
         if missing:
             self.launch('covers', missing)
@@ -739,6 +702,9 @@ class Window(QMainWindow):
         dialog.setWindowTitle('세부 설정')
         dialog.resize(550, 270)
         layout = QFormLayout(dialog)
+        theme=QComboBox();theme.addItems([v[0] for v in themes.THEMES.values()]);theme.setCurrentIndex(list(themes.THEMES).index(themes.key(self.cfg.get('theme'))))
+        theme.currentIndexChanged.connect(lambda i:self.apply_theme(list(themes.THEMES)[i]))
+        layout.addRow('테마 · 즉시 적용 / 자동 저장',theme)
         delay = QDoubleSpinBox()
         delay.setRange(.1, 30)
         delay.setSingleStep(.1)
@@ -913,6 +879,10 @@ class Window(QMainWindow):
     def set_page_nav(self,library):
         for widget,active in [(self.catalog_nav,not library),(self.library_nav,library)]:
             widget.setObjectName('activeNav' if active else 'nav');widget.style().unpolish(widget);widget.style().polish(widget)
+    def apply_theme(self,value,persist=True):
+        value=themes.key(value);self.cfg['theme']=value;themes.apply(QApplication.instance(),value)
+        if getattr(self,'offline',None) is not None:self.offline.canvas.update()
+        if persist:self.persist_settings()
     def show_catalog(self):
         self.content_stack.setCurrentWidget(self.download_page);self.set_page_nav(False)
     def show_offline(self):
