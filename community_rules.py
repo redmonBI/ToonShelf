@@ -28,7 +28,6 @@ def apply_request(data,request,actor,admin,request_id,date=None):
         if actor in votes:votes.remove(actor)
         else:votes.append(actor)
     elif action in ['edit','delete','site_add','site_delete']:
-        if actor.casefold()!=admin.casefold():raise PermissionError('수정·삭제와 사이트 관리는 소유자만 가능합니다.')
         if action.startswith('site_'):
             if action=='site_add':
                 item={'id':str(request_id),'name':text(request.get('name'),100),'url':url(request.get('url')),

@@ -4,7 +4,7 @@ from datetime import datetime,timezone,timedelta
 from pathlib import Path
 from PySide6.QtCore import QThread,Signal,QTimer,QDateTime
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QTableWidget,QTableWidgetItem,
- QAbstractItemView,QComboBox,QSpinBox,QCheckBox,QFormLayout,QDateTimeEdit,QMessageBox,QLineEdit,QPlainTextEdit)
+ QAbstractItemView,QComboBox,QSpinBox,QCheckBox,QFormLayout,QDateTimeEdit,QMessageBox,QLineEdit,QPlainTextEdit,QProgressBar)
 from sharing import REPOSITORY,VERSION,community,releases,issue_link,prepare_update,version_tuple
 
 def button(text,fn):
@@ -96,8 +96,8 @@ class CommunityDialog(TaskDialog):
         self.body=QPlainTextEdit();self.body.setReadOnly(True);lay.addWidget(self.body)
         self.table.itemSelectionChanged.connect(self.detail)
         row=QHBoxLayout()
-        for title,fn in [('새로고침',self.refresh),('추천 작성',lambda:self.form()),('동감 / 취소',self.vote),('수정 · 소유자',self.edit),('삭제 · 소유자',self.delete)]:row.addWidget(button(title,fn))
-        lay.addLayout(row);lay.addWidget(QLabel('작성·동감은 GitHub 로그인 후 요청을 등록합니다. 자동 처리 뒤 새로고침하면 반영됩니다. 수정·삭제는 저장소 소유자만 가능합니다.'))
+        for title,fn in [('새로고침',self.refresh),('추천 작성',lambda:self.form()),('동감 / 취소',self.vote),('수정',self.edit),('삭제',self.delete)]:row.addWidget(button(title,fn))
+        lay.addLayout(row);lay.addWidget(QLabel('누구나 작성·동감·수정·삭제 가능합니다. GitHub 로그인 후 요청을 등록하면 자동 처리되며, 새로고침하면 반영됩니다.'))
         self.refresh()
     def refresh(self):self.task(lambda:community(self.repo),self.loaded)
     def loaded(self,ok,data):
@@ -126,7 +126,7 @@ class CommunityDialog(TaskDialog):
                 webbrowser.open(link);self.info.setText('GitHub 작성 화면에서 Submit new issue를 누르면 요청이 등록됩니다. 자동 처리 후 새로고침하세요.')
         except Exception as e:QMessageBox.warning(self,'요청 확인',str(e))
     def form(self,post=None):
-        d=QDialog(self);d.setWindowTitle('추천 수정 · 소유자 전용' if post else '작품 추천');lay=QFormLayout(d);fields={}
+        d=QDialog(self);d.setWindowTitle('추천 수정' if post else '작품 추천');lay=QFormLayout(d);fields={}
         for key,title in [('author','추천인 이름'),('title','작품명'),('genre','장르'),('link','작품 링크 · 선택')]:
             fields[key]=QLineEdit((post or {}).get(key,''));lay.addRow(title,fields[key])
         body=QPlainTextEdit((post or {}).get('body',''));lay.addRow('추천 내용',body)
@@ -150,8 +150,10 @@ class UpdatesDialog(TaskDialog):
         lay=QVBoxLayout(self);self.info=QLabel('설치 버전 '+VERSION);lay.addWidget(self.info)
         self.table=QTableWidget(0,3);self.table.setHorizontalHeaderLabels(['버전','게시일','업데이트 이름']);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.horizontalHeader().setStretchLastSection(True);lay.addWidget(self.table)
         self.notes=QPlainTextEdit();self.notes.setReadOnly(True);lay.addWidget(self.notes);self.table.itemSelectionChanged.connect(self.detail)
-        lay.addWidget(button('업데이트 확인',self.refresh));lay.addWidget(button('선택 버전 다운로드 · 검증 · 새 폴더에 설치',self.install))
-        lay.addWidget(QLabel('설정과 대기열을 복사해 새 버전을 준비합니다. 현재 파일을 덮어쓰지 않습니다. 다운로드 중에는 설치할 수 없습니다.'))
+        self.check_button=button('업데이트 확인',self.refresh);lay.addWidget(self.check_button)
+        self.install_button=button('선택 버전 패치 · 프로그램 재시작',self.install);lay.addWidget(self.install_button)
+        self.busy=QProgressBar();self.busy.setRange(0,0);self.busy.hide();lay.addWidget(self.busy)
+        lay.addWidget(QLabel('현재 폴더에 프로그램 파일만 패치하고 자동 재시작합니다. 설정·대기열·작품은 유지합니다. 실패하면 변경한 파일을 복구합니다.'))
         self.refresh()
     def refresh(self):self.task(lambda:releases(self.owner.cfg.get('community_repo',REPOSITORY)),self.loaded)
     def loaded(self,ok,data):
@@ -164,20 +166,37 @@ class UpdatesDialog(TaskDialog):
         n=self.table.currentRow()
         if hasattr(self,'rows') and 0<=n<len(self.rows):self.notes.setPlainText(self.rows[n].get('body') or '')
     def install(self):
+        import sys
+        if not getattr(sys,'frozen',False):QMessageBox.information(self,'실행 파일 필요','배포된 ToonShelf.exe에서 자체 업데이트를 사용하세요.');return
         if self.owner.queue_job or (self.owner.job and self.owner.job.isRunning()):QMessageBox.information(self,'작업 중','작업을 중단하고 기록을 저장한 뒤 설치하세요.');return
         n=self.table.currentRow()
         if not hasattr(self,'rows') or not 0<=n<len(self.rows):return
+        if version_tuple(self.rows[n]['tag_name'])<=version_tuple(VERSION):
+            QMessageBox.information(self,'최신 버전','현재 버전보다 새로운 버전을 선택하세요.');return
         self.info.setText('업데이트 다운로드 및 SHA-256 검사 중…')
-        self.task(lambda:prepare_update(self.rows[n],self.owner.state_dir.parent/'Updates',self.owner.cfg.get('community_repo',REPOSITORY)),self.installed)
-    def installed(self,ok,result):
-        if not ok:self.info.setText('설치 실패: '+str(result));return
-        import shutil,sqlite3
-        target=Path(result['path'])/'state';target.mkdir(exist_ok=True)
-        for name in ['settings.json','properties.json','catalog.json','site_links.json']:
-            path=self.owner.state_dir/name
-            if path.exists():shutil.copyfile(path,target/name)
-        source=self.owner.queue.connect();dest=sqlite3.connect(target/'queue.sqlite3');source.backup(dest);dest.close();source.close()
-        self.owner.power.cancel()
-        self.info.setText('설치 준비 완료: '+result['path']);self.notes.setPlainText('새 버전을 실행하려면 현재 창을 닫고 아래 파일을 실행하세요.\n'+str(Path(result['path'])/'ToonShelf.exe'))
+        self.install_button.setEnabled(False);self.check_button.setEnabled(False);self.busy.show()
+        from patch_update import prepare_patch
         import os
-        os.startfile(result['path'])
+        selected=self.rows[n];target=Path(sys.executable).resolve().parent
+        def prepare():
+            result=prepare_update(selected,target/'Updates',self.owner.cfg.get('community_repo',REPOSITORY))
+            result['manifest']=prepare_patch(result,target,os.getpid());return result
+        self.task(prepare,self.installed)
+    def installed(self,ok,result):
+        self.busy.hide();self.install_button.setEnabled(True);self.check_button.setEnabled(True)
+        if not ok:self.info.setText('패치 준비 실패: '+str(result));return
+        if self.owner.queue_job or (self.owner.job and self.owner.job.isRunning()) or (self.owner.update_job and self.owner.update_job.isRunning()):
+            self.info.setText('패치 준비 완료 · 진행 중인 작업을 종료하고 다시 업데이트하세요.');return
+        self.info.setText('패치 적용 준비 완료 · 프로그램을 재시작합니다…');self.busy.show();self.install_button.setEnabled(False)
+        def apply():
+            import subprocess
+            try:
+                if getattr(self.owner,'offline',None) and not self.owner.offline.shutdown():raise RuntimeError('뷰어 작업을 종료한 뒤 다시 시도하세요.')
+                self.owner.read_cfg();self.owner.power.cancel()
+                self.owner.cover_timer.stop()
+                subprocess.Popen([str(Path(result['path'])/'ToonShelf.exe'),'--apply-update',result['manifest']],
+                    cwd=result['path'],creationflags=subprocess.CREATE_NO_WINDOW,close_fds=True)
+                self.accept();self.owner.close()
+            except Exception as e:
+                self.busy.hide();self.install_button.setEnabled(True);self.info.setText('재시작 준비 실패: '+str(e))
+        QTimer.singleShot(150,apply)

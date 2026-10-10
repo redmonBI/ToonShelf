@@ -959,6 +959,10 @@ class Window(QMainWindow):
 
 
 def main():
+    if '--apply-update' in sys.argv:
+        from patch_update import run_helper
+        index=sys.argv.index('--apply-update')
+        return run_helper(sys.argv[index+1]) if len(sys.argv)>index+1 else 1
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     app.setStyleSheet(STYLE)

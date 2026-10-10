@@ -49,11 +49,12 @@ class V3Tests(unittest.TestCase):
             with self.assertRaises(ValueError):p.arm({'action':'pc','trigger':'at','timestamp':90})
     def seed_post(self):
         return apply_request({}, {'action':'recommend','author':'친구','title':'작품','genre':'판타지','body':'추천 이유'},'friend','owner',1,'2026-10-10T01:00:00Z')
-    def test_community_permissions_are_server_side(self):
+    def test_community_is_editable_by_every_github_account(self):
         data=self.seed_post()
-        with self.assertRaises(PermissionError):apply_request(data,{'action':'delete','id':'1'},'friend','owner',2)
-        with self.assertRaises(PermissionError):apply_request(data,{'action':'site_add','name':'x','url':'https://a'},'friend','owner',3)
-        edited=apply_request(data,{'action':'edit','id':'1','author':'이름','title':'수정','genre':'액션','body':'내용'},'owner','owner',4)
+        self.assertFalse(apply_request(data,{'action':'delete','id':'1'},'another_friend','owner',2)['posts'])
+        sites=apply_request(data,{'action':'site_add','name':'x','url':'https://a','news_url':'https://a/news'},'friend','owner',3)
+        self.assertFalse(apply_request(sites,{'action':'site_delete','id':'3'},'another_friend','owner',5)['sites'])
+        edited=apply_request(data,{'action':'edit','id':'1','author':'이름','title':'수정','genre':'액션','body':'내용'},'another_friend','owner',4)
         self.assertEqual(edited['posts'][0]['title'],'수정');self.assertEqual(edited['posts'][0]['created'],data['posts'][0]['created'])
     def test_votes_are_unique_by_account_and_requests_idempotent(self):
         data=self.seed_post();v={'action':'vote','id':'1'}

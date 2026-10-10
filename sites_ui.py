@@ -33,10 +33,10 @@ class SitesDialog(TaskDialog):
         except (OSError,ValueError):self.local=[]
         self.shared=[];self.rows=[]
         lay=QVBoxLayout(self);lay.addWidget(QLabel('SITES  /  연결할 곳과 최신 소식'))
-        self.info=QLabel('개인 링크는 이 PC에 저장합니다. 공유 사이트 등록·삭제는 저장소 소유자만 가능합니다.');self.info.setWordWrap(True);lay.addWidget(self.info)
+        self.info=QLabel('개인 링크는 이 PC에 저장합니다. 공유 사이트·최신 링크는 누구나 등록·삭제할 수 있습니다.');self.info.setWordWrap(True);lay.addWidget(self.info)
         self.table=QTableWidget(0,4);self.table.setHorizontalHeaderLabels(['종류','사이트','주소','최신 소식 주소']);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.horizontalHeader().setStretchLastSection(True);lay.addWidget(self.table)
         row=QHBoxLayout()
-        for title,fn in [('개인 링크 추가',lambda:self.add(False)),('공유 사이트 등록 · 소유자',lambda:self.add(True)),('삭제',self.delete),('공유 갱신',self.refresh),('사이트 열기',self.open),('웹에서 최신 링크 조회',self.latest)]:row.addWidget(button(title,fn))
+        for title,fn in [('개인 링크 추가',lambda:self.add(False)),('공유 사이트 등록',lambda:self.add(True)),('삭제',self.delete),('공유 갱신',self.refresh),('사이트 열기',self.open),('웹에서 최신 링크 조회',self.latest)]:row.addWidget(button(title,fn))
         lay.addLayout(row)
         self.news=QTableWidget(0,2);self.news.setHorizontalHeaderLabels(['웹페이지에 표시된 최신 링크','주소']);self.news.horizontalHeader().setStretchLastSection(True);self.news.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.news.cellDoubleClicked.connect(self.open_news);lay.addWidget(self.news)
         lay.addWidget(QLabel('사이트별 본문 구조가 다를 수 있습니다. 이 화면은 링크 조회·공유용이며 다운로드 어댑터를 자동 변경하지 않습니다.'))
@@ -52,7 +52,7 @@ class SitesDialog(TaskDialog):
     def refresh(self):self.task(lambda:community(self.owner.cfg.get('community_repo',REPOSITORY)),self.loaded)
     def loaded(self,ok,data):
         if not ok:self.info.setText('공유 링크 확인 실패: '+str(data));return
-        self.shared=data.get('sites',[]);self.show_rows();self.info.setText(f'공유 사이트 {len(self.shared)}개 · 사이트 관리는 소유자 전용')
+        self.shared=data.get('sites',[]);self.show_rows();self.info.setText(f'공유 사이트 {len(self.shared)}개 · 누구나 등록·삭제 가능 · GitHub 로그인 후 반영')
     def add(self,shared):
         d=QDialog(self);d.setWindowTitle('공유 사이트 등록' if shared else '개인 사이트');lay=QFormLayout(d);fields={}
         for k,t in [('name','사이트 이름'),('url','주소'),('news_url','최신 소식 / 주소 안내 페이지 · 선택')]:fields[k]=QLineEdit();lay.addRow(t,fields[k])
