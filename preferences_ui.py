@@ -1,6 +1,6 @@
 """One settings center, with persistent appearance and reading preferences."""
 from pathlib import Path
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt,QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,
     QPushButton,QTabWidget,QWidget,QComboBox,QCheckBox,QColorDialog,QLineEdit,
@@ -40,11 +40,14 @@ class SettingsCenter(QDialog):
         self.selector=QLineEdit(host.cfg['image_selector']);download.addRow('본문 이미지 선택자',self.selector)
         note=QLabel('다운로드 설정은 아래 버튼으로 저장하세요.\n진행 중인 작업에는 현재 작업이 끝난 뒤 적용됩니다.');note.setWordWrap(True);download.addRow(note);self.download_status=QLabel();download.addRow(self.download_status);download.addRow(button('다운로드 설정 저장',self.save_download))
         convenience=self.page('관리·업데이트')
-        for text,fn in [('다운로드 대기열 관리',host.queue_dialog),('완료 후 종료·타이머',host.power_dialog),('다운로드 기록·내보내기',host.history),('업데이트 확인·기존 폴더 패치',host.updates_dialog)]:convenience.addRow(button(text,fn))
+        for text,fn in [('다운로드 대기열 관리',host.queue_dialog),('완료 후 종료·타이머',host.power_dialog),('다운로드 기록·내보내기',host.history),('업데이트 확인·기존 폴더 패치',host.updates_dialog)]:convenience.addRow(button(text,lambda checked=False,fn=fn:self.open_manager(fn)))
         note=QLabel('업데이트 파일을 검사한 뒤 기존 프로그램 폴더에 패치합니다.\n내 설정, 읽던 위치와 다운로드한 작품은 유지됩니다.');note.setWordWrap(True);convenience.addRow(note)
         self.tabs.setCurrentIndex(page);layout.addWidget(button('닫기',self.accept),alignment=Qt.AlignRight)
     def page(self,title):
         widget=QWidget();form=QFormLayout(widget);form.setContentsMargins(16,20,16,16);form.setVerticalSpacing(16);self.tabs.addTab(widget,title);return form
+    def open_manager(self,callback):
+        # Close this modal first so an update can exit the application cleanly.
+        self.accept();QTimer.singleShot(0,callback)
     def check(self,form,title,key,callback=None):
         widget=QCheckBox(title);widget.setChecked(bool(self.host.cfg.get(key,False)));widget.toggled.connect(callback or (lambda value:self.host.set_view_preference(key,value)));form.addRow(widget);setattr(self,key,widget)
     def set_background(self,value):

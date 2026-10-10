@@ -43,7 +43,10 @@ class AppearanceTests(unittest.TestCase):
    w=app.Window();w.cover_timer.stop();before=dict(w.cfg);dialog=SettingsCenter(w,1);self.assertEqual(w.cfg,before);self.assertEqual(dialog.tabs.count(),4)
    dialog.reader_hide_top.setChecked(True);dialog.reader_hide_bottom.setChecked(True);dialog.read_width.setValue(1000);dialog.set_background('#f4ecd8');dialog.menu_compact.setChecked(True)
    saved=json.loads((Path(tmp)/'settings.json').read_text(encoding='utf-8'));self.assertTrue(saved['reader_hide_top']);self.assertTrue(saved['reader_hide_bottom']);self.assertEqual(saved['reader_width'],1000);self.assertEqual(saved['reader_background'],'#f4ecd8')
-   dialog.close();reopened=SettingsCenter(w);self.assertTrue(reopened.reader_hide_top.isChecked());self.assertEqual(reopened.read_width.value(),1000);reopened.set_background('');self.assertEqual(w.cfg['reader_background'],'');reopened.close();w.close();q.processEvents()
+   dialog.close();reopened=SettingsCenter(w);self.assertTrue(reopened.reader_hide_top.isChecked());self.assertEqual(reopened.read_width.value(),1000);reopened.set_background('');self.assertEqual(w.cfg['reader_background'],'');reopened.close()
+   with patch.object(w,'updates_dialog') as update:
+    manager=SettingsCenter(w,3);manager.show();q.processEvents();next(b for b in manager.findChildren(QPushButton) if b.text()=='업데이트 확인·기존 폴더 패치').click();q.processEvents();self.assertFalse(manager.isVisible());update.assert_called_once()
+   w.close();q.processEvents()
  def test_panel_controls_persist_and_navigation_stays_available(self):
   import app
   q=QApplication.instance() or QApplication([])
