@@ -18,7 +18,7 @@ jobs:
       - name: Run tests without shutting down runner
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m unittest test_core test_library test_v3 test_reading -v
+        run: python -m unittest test_core test_library test_v3 test_reading test_appearance -v
       - run: python bundle_opencomic.py
       - run: python -m PyInstaller --clean --noconfirm --distpath portable ToonShelf.spec
       - run: python package_v3.py
@@ -28,4 +28,14 @@ jobs:
         shell: pwsh
         run: |
           $releaseVersion = python -c "from sharing import VERSION; print(VERSION)"
-          gh release create "v$releaseVersion" "ToonShelf_${releaseVersion}_Windows.zip" SHA256SUMS.txt --title "ToonShelf $releaseVersion" --notes-file RELEASE_NOTES.md --repo "${{ github.repository }}"
+          $knownReleases = gh release list --limit 100 --json tagName --repo "${{ github.repository }}" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read releases' }
+          $sameVersion = @($knownReleases | Where-Object { $_.tagName -eq "v$releaseVersion" })
+          if ($sameVersion.Count -gt 0) {
+            gh release upload "v$releaseVersion" "ToonShelf_${releaseVersion}_Windows.zip" SHA256SUMS.txt --clobber --repo "${{ github.repository }}"
+            if ($LASTEXITCODE -ne 0) { throw 'Could not upload refreshed assets' }
+            gh release edit "v$releaseVersion" --notes-file RELEASE_NOTES.md --repo "${{ github.repository }}"
+          } else {
+            gh release create "v$releaseVersion" "ToonShelf_${releaseVersion}_Windows.zip" SHA256SUMS.txt --title "ToonShelf $releaseVersion" --notes-file RELEASE_NOTES.md --repo "${{ github.repository }}"
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish release' }
