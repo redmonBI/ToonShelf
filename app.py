@@ -411,6 +411,7 @@ class Window(QMainWindow):
         for widget,text in self.sidebar_buttons:
             widget.setText(text.strip()[0] if compact else text);widget.setToolTip(text.strip());widget.setAccessibleName(text.strip())
         self.menu_toggle.setText('☰ 메뉴 펼치기' if compact else '☰ 메뉴 접기')
+        if hasattr(self,'pager'):self.render()
         if persist:self.persist_settings()
 
     def toggle_rules(self):self.set_rules_hidden(not self.cfg.get('rules_hidden',False))
@@ -418,6 +419,7 @@ class Window(QMainWindow):
         self.cfg['rules_hidden']=hidden;self.right_rail.setVisible(not hidden)
         self.rules_toggle.setText('저장 규칙 표시' if hidden else '저장 규칙 숨기기')
         self.compact_download.setVisible(hidden)
+        if hasattr(self,'pager'):self.render()
         if persist:self.persist_settings()
 
     def save_settings_clicked(self):
@@ -574,10 +576,11 @@ class Window(QMainWindow):
         self.page_index=min(self.page_index,max(0,(len(works)-1)//24))
         self.count.setText(f'작품 {len(works):,}개  ·  전체 {len(self.works):,}개')
         self.selected_label.setText(f'{len(self.selected)}개 선택')
+        columns=(5 if self.cfg.get('menu_compact') else 4) if self.cfg.get('rules_hidden') else 3
         for i, work in enumerate(works[self.page_index*24:(self.page_index+1)*24]):
             card = Card(work, work.url in self.selected, self.select, self.episodes)
             self.cards[work.url] = card
-            self.grid.addWidget(card, i//3, i%3)
+            self.grid.addWidget(card, i//columns, i%columns)
         if not works:
             empty = label('아직 작품이 없습니다.\n상단의 ‘목록 불러오기’를 눌러 시작하세요.', 'muted', 16)
             empty.setAlignment(Qt.AlignCenter)
