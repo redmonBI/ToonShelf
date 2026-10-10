@@ -921,7 +921,7 @@ class Window(QMainWindow):
             self.offline=OfflineLibrary(self);self.content_stack.addWidget(self.offline)
         self.content_stack.setCurrentWidget(self.offline)
         self.set_page_nav(True)
-        if not self.offline.rows:self.offline.refresh()
+        if not self.offline.rows or self.offline.root!=Path(self.path.text()).expanduser().resolve():self.offline.refresh()
     def opencomic_path(self):
         configured=self.cfg.get('opencomic_exe','')
         bundled=APP_DIR/'Vendor'/'OpenComic'/'OpenComic.exe'

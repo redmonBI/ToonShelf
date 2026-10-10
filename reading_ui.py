@@ -75,7 +75,7 @@ class ComicCanvas(QWidget):
 
 class OfflineLibrary(QWidget):
     def __init__(self,host):
-        super().__init__();self.host=host;self.rows=[];self.task=None;self.work=None;self.chapter=0;self.page=0;self.images=[];self.mirrors=[];self.popup=None
+        super().__init__();self.host=host;self.rows=[];self.task=None;self.work=None;self.chapter=0;self.page=0;self.images=[];self.mirrors=[];self.mirror_work=None;self.popup=None
         self.setStyleSheet('QWidget {background:#f5f5f7;color:#1d1d1f;font-family:"Segoe UI";} QLabel{background:transparent;} QPushButton{background:#fff;border:1px solid #d9dde4;border-radius:12px;padding:10px;} QPushButton:hover{background:#e8efff;} QLineEdit,QComboBox{background:white;color:#1d1d1f;border:1px solid #d9dde4;border-radius:10px;padding:10px;}')
         lay=QVBoxLayout(self);lay.setContentsMargins(28,24,28,24)
         header=QHBoxLayout();title=QLabel('내 작품 라이브러리');title.setStyleSheet('font-size:28px;font-weight:700');header.addWidget(title);header.addStretch()
@@ -114,6 +114,8 @@ class OfflineLibrary(QWidget):
     def ready(self):
         self.loading.hide();self.chapters.setEnabled(True);self.prev.setEnabled(bool(self.work) and self.chapter>0);self.next.setEnabled(bool(self.work) and self.chapter<len(self.work['chapters'])-1)
     def refresh(self):
+        if self.task and self.task.isRunning():return
+        self.mirrors=[];self.mirror_work=None
         self.root=Path(self.host.path.text()).expanduser().resolve();catalog=list(self.host.works)
         self.run(lambda c,e:shelf_index(self.root,catalog,c,e),self.loaded)
     def loaded(self,rows):
@@ -191,10 +193,11 @@ class OfflineLibrary(QWidget):
             self.status.setText('뷰어 설정에서 OpenComic 실행 파일을 선택하세요.');self.host.reader_settings();return
         work=self.work;chapter=self.chapter
         def prepared(paths):
-            self.mirrors=paths
+            self.mirrors=paths;self.mirror_work=(str(self.root),work['key'])
             try:opencomic(exe,paths[chapter]);self.status.setText(work['title']+' · OpenComic에서 읽는 중');self.external_controls()
             except Exception as exc:QMessageBox.warning(self,'뷰어 확인',str(exc))
-        self.run(lambda c,e:prepare_opencomic(self.root,work,c,e),prepared)
+        if self.mirror_work==(str(self.root),work['key']) and chapter<len(self.mirrors) and Path(self.mirrors[chapter]).is_dir():prepared(self.mirrors)
+        else:self.run(lambda c,e:prepare_opencomic(self.root,work,c,e),prepared)
     def external_controls(self):
         if self.popup is None:
             self.popup=QDialog(self);self.popup.setWindowTitle('OpenComic · 회차 이동');p=QHBoxLayout(self.popup)
