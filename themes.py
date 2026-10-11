@@ -57,6 +57,10 @@ def stylesheet(value):
  QPushButton#pageButton:checked {background:@accent@;color:@on@;border:1px solid @accent@;}
  QPushButton#pageStep {padding:7px 6px;}
  QLineEdit,QSpinBox,QDoubleSpinBox,QComboBox {background:@panel@;color:@text@;border:1px solid @border@;border-radius:8px;padding:8px;selection-background-color:@selected@;selection-color:@text@;}
+ QAbstractSpinBox {min-height:24px;padding:4px 20px 4px 8px;}
+ QAbstractSpinBox QLineEdit {border:0;border-radius:0;padding:0;background:transparent;color:@text@;min-width:24px;}
+ QComboBox {min-height:24px;padding-right:24px;}
+ QAbstractSpinBox::up-button,QAbstractSpinBox::down-button {width:18px;}
  QComboBox QAbstractItemView {background:@panel@;color:@text@;selection-background-color:@selected@;selection-color:@text@;}
  QCheckBox {background:transparent;spacing:8px;}
  QCheckBox::indicator {width:17px;height:17px;background:@panel@;border:1px solid @border@;border-radius:4px;}

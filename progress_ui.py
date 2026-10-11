@@ -3,7 +3,7 @@ import math
 from collections import deque
 from PySide6.QtCore import Qt,QTimer,QPointF
 from PySide6.QtGui import QPainter,QPen,QColor,QPainterPath
-from PySide6.QtWidgets import QDialog,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QScrollArea,QWidget,QFrame,QProgressBar
+from PySide6.QtWidgets import QDialog,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QScrollArea,QWidget,QFrame,QProgressBar,QComboBox
 from library import size_text
 from download_metrics import duration
 import themes
@@ -60,16 +60,22 @@ class QueueDashboard(QDialog):
     def __init__(self,host):
         super().__init__(host);self.host=host;self.cards={};self.page=0;self.setWindowTitle('다운로드 · 작품별 진행');self.resize(1020,800);layout=QVBoxLayout(self);layout.setContentsMargins(24,24,24,20)
         heading=QLabel('작품별 다운로드');heading.setStyleSheet('font-size:26px;font-weight:700');layout.addWidget(heading)
+        self.mode=QComboBox();self.mode.addItems(['상세 그래프','심플 · 퍼센트','축소 · 상위 5개 그래프']);self.mode.setCurrentIndex(host.cfg.get('queue_view',0));layout.addWidget(self.mode)
         self.overview=QLabel();layout.addWidget(self.overview);self.aggregate=Sparkline();layout.addWidget(self.aggregate)
         hint=QLabel('여러 작품의 진행 상황을 함께 확인합니다. 속도는 전체 합계이며, 각 작품의 예상 시간은 이미지 수로 추정합니다.');hint.setWordWrap(True);layout.addWidget(hint)
         self.scroll=QScrollArea();self.scroll.setWidgetResizable(True);body=QWidget();self.items=QVBoxLayout(body);self.items.setContentsMargins(2,2,14,2);self.items.setSpacing(14);self.items.addStretch();self.scroll.setWidget(body);layout.addWidget(self.scroll,1)
         row=QHBoxLayout()
         for text,callback in [('대기열 실행',host.run_queue),('전체 일시정지 / 계속',host.pause),('닫기',self.accept)]:b=QPushButton(text);b.clicked.connect(callback);row.addWidget(b)
-        layout.addLayout(row);pages=QHBoxLayout();self.previous=QPushButton('이전 목록');self.next=QPushButton('다음 목록');self.page_label=QLabel();self.previous.clicked.connect(lambda:self.change_page(-1));self.next.clicked.connect(lambda:self.change_page(1));pages.addWidget(self.previous);pages.addWidget(self.page_label,1);pages.addWidget(self.next);layout.addLayout(pages);self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(1000);self.finished.connect(lambda:self.timer.stop());self.refresh()
+        layout.addLayout(row);pages=QHBoxLayout();self.previous=QPushButton('이전 목록');self.next=QPushButton('다음 목록');self.page_label=QLabel();self.previous.clicked.connect(lambda:self.change_page(-1));self.next.clicked.connect(lambda:self.change_page(1));pages.addWidget(self.previous);pages.addWidget(self.page_label,1);pages.addWidget(self.next);layout.addLayout(pages);self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(1000);self.finished.connect(lambda:self.timer.stop());self.mode.currentIndexChanged.connect(self.change_mode);self.refresh()
+    def change_mode(self,index):
+        if hasattr(self.host,'set_queue_view'):self.host.queue_view.setCurrentIndex(index)
+        self.page=0;self.refresh()
     def change_page(self,delta):
         self.page=max(0,self.page+delta);self.refresh()
     def refresh(self):
         self.setProperty('theme',self.host.cfg.get('theme','white'));rows=self.host.queue.rows();ordered=sorted(rows,key=lambda r:(r['status'] not in ('running','paused'),-r.get('priority',0),r['id']));pages=max(1,(len(ordered)+24)//25);self.page=min(self.page,pages-1);visible=ordered[self.page*25:self.page*25+25];ids={r['id'] for r in visible};self.previous.setEnabled(self.page>0);self.next.setEnabled(self.page<pages-1);self.page_label.setText(f'{self.page+1} / {pages} · 전체 {len(rows)} 작품')
+        if self.mode.currentIndex()==2:
+            visible=ordered[:5];ids={r['id'] for r in visible};self.previous.setEnabled(False);self.next.setEnabled(False);self.page_label.setText(f'상위 {len(visible)}개 · 전체 {len(rows)} 작품 · 상세 보기에서 전체 확인')
         for id in list(self.cards):
             if id not in ids:card=self.cards.pop(id);self.items.removeWidget(card);card.deleteLater()
         running=[r for r in rows if r['status']=='running'];rates=getattr(self.host,'queue_metrics',{})
@@ -79,3 +85,4 @@ class QueueDashboard(QDialog):
         for index,row in enumerate(visible):
             if row['id'] not in self.cards:self.cards[row['id']]=WorkProgress(self.host,row)
             card=self.cards[row['id']];self.items.removeWidget(card);self.items.insertWidget(index,card);card.update_row(row)
+            mode=self.mode.currentIndex();card.detail.setVisible(mode==0);card.speed.setVisible(mode==0);card.graph.setVisible(mode!=1);card.graph.setMinimumHeight(28 if mode==2 else 75);card.graph.setMaximumHeight(32 if mode==2 else 16777215)

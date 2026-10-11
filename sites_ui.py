@@ -5,7 +5,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urljoin,urlsplit
 from bs4 import BeautifulSoup
-from PySide6.QtWidgets import QVBoxLayout,QHBoxLayout,QLabel,QTableWidget,QTableWidgetItem,QLineEdit,QFormLayout,QDialog,QMessageBox,QAbstractItemView
+from PySide6.QtWidgets import QVBoxLayout,QHBoxLayout,QLabel,QTableWidget,QTableWidgetItem,QLineEdit,QFormLayout,QDialog,QMessageBox,QAbstractItemView,QPlainTextEdit
 from control_ui import TaskDialog,button
 from sharing import community,REPOSITORY,issue_link
 from community_rules import url
@@ -29,18 +29,20 @@ class SitesDialog(TaskDialog):
     def __init__(self,parent):
         super().__init__(parent);self.owner=parent;self.setWindowTitle('사이트 공유 · 최신 링크');self.resize(1050,690)
         self.local_file=parent.state_dir/'site_links.json'
+        from site_registry import SiteRegistry
+        self.registry=SiteRegistry(parent.state_dir)
         try:self.local=json.loads(self.local_file.read_text(encoding='utf-8'))
         except (OSError,ValueError):self.local=[]
-        self.shared=[];self.rows=[]
+        self.shared=self.registry.read('shared_sites.json');self.rows=[]
         lay=QVBoxLayout(self);lay.addWidget(QLabel('SITES  /  연결할 곳과 최신 소식'))
         self.info=QLabel('개인 링크는 이 PC에 저장합니다. 공유 사이트·최신 링크는 누구나 등록·삭제할 수 있습니다.');self.info.setWordWrap(True);lay.addWidget(self.info)
         self.table=QTableWidget(0,4);self.table.setHorizontalHeaderLabels(['종류','사이트','주소','최신 소식 주소']);self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.table.horizontalHeader().setStretchLastSection(True);lay.addWidget(self.table)
         row=QHBoxLayout()
-        for title,fn in [('개인 링크 추가',lambda:self.add(False)),('공유 사이트 등록',lambda:self.add(True)),('삭제',self.delete),('공유 갱신',self.refresh),('사이트 열기',self.open),('웹에서 최신 링크 조회',self.latest)]:row.addWidget(button(title,fn))
+        for title,fn in [('개인 링크 추가',lambda:self.add(False)),('공유 사이트 등록',lambda:self.add(True)),('주소 수정·이력',self.edit),('삭제',self.delete),('공유 갱신',self.refresh),('사이트 열기',self.open),('웹에서 최신 링크 조회',self.latest)]:row.addWidget(button(title,fn))
         lay.addLayout(row)
         self.news=QTableWidget(0,2);self.news.setHorizontalHeaderLabels(['웹페이지에 표시된 최신 링크','주소']);self.news.horizontalHeader().setStretchLastSection(True);self.news.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);self.news.cellDoubleClicked.connect(self.open_news);lay.addWidget(self.news)
         lay.addWidget(QLabel('사이트별 본문 구조가 다를 수 있습니다. 이 화면은 링크 조회·공유용이며 다운로드 어댑터를 자동 변경하지 않습니다.'))
-        self.show_rows();self.refresh()
+        lay.addWidget(button('닫기',self.accept));self.show_rows();self.refresh()
     def show_rows(self):
         self.rows=[dict(r,scope='개인') for r in self.local]+[dict(r,scope='공유') for r in self.shared];self.table.setRowCount(len(self.rows))
         for n,r in enumerate(self.rows):
@@ -52,17 +54,27 @@ class SitesDialog(TaskDialog):
     def refresh(self):self.task(lambda:community(self.owner.cfg.get('community_repo',REPOSITORY)),self.loaded)
     def loaded(self,ok,data):
         if not ok:self.info.setText('공유 링크 확인 실패: '+str(data));return
-        self.shared=data.get('sites',[]);self.show_rows();self.info.setText(f'공유 사이트 {len(self.shared)}개 · 누구나 등록·삭제 가능 · GitHub 로그인 후 반영')
-    def add(self,shared):
+        self.shared=data.get('sites',[]);self.registry.cache_shared(self.shared);self.owner.refresh_site_choices();self.show_rows();self.info.setText(f'공유 사이트 {len(self.shared)}개 · 누구나 등록·삭제 가능 · GitHub 로그인 후 반영')
+    def edit(self):
+        r=self.selected()
+        if r:self.add(r['scope']=='공유',r)
+    def add(self,shared,existing=None):
+        existing=existing or {}
         d=QDialog(self);d.setWindowTitle('공유 사이트 등록' if shared else '개인 사이트');lay=QFormLayout(d);fields={}
-        for k,t in [('name','사이트 이름'),('url','주소'),('news_url','최신 소식 / 주소 안내 페이지 · 선택')]:fields[k]=QLineEdit();lay.addRow(t,fields[k])
+        for k,t in [('name','사이트 이름'),('url','현재 주소'),('news_url','최신 소식 / 주소 안내 페이지 · 선택')]:fields[k]=QLineEdit(existing.get(k,''));lay.addRow(t,fields[k])
+        planned=QPlainTextEdit();planned.setPlaceholderText('변경 예정 주소 · 한 줄에 하나 · 모르면 비워 두세요');planned.setPlainText('\n'.join(existing.get('planned_urls',[])));planned.setMaximumHeight(90);lay.addRow('변경 예정',planned)
+        history=QTableWidget(0,2);history.setHorizontalHeaderLabels(['이전 주소 · 마지막 항목이 현재 주소','변경일']);rows=existing.get('history',[]) or ([dict(url=existing['url'],date=existing.get('updated',''))] if existing else []);history.setRowCount(len(rows))
+        for i,h in enumerate(rows):
+            history.setItem(i,0,QTableWidgetItem(h['url']));history.setItem(i,1,QTableWidgetItem(h.get('date','')[:19]))
+        history.setEditTriggers(QAbstractItemView.NoEditTriggers);history.horizontalHeader().setStretchLastSection(True);history.setMinimumWidth(630);lay.addRow('주소 이력',history)
         def send():
             try:
                 r={k:w.text().strip() for k,w in fields.items()};r['url']=url(r['url'])
                 if r['news_url']:r['news_url']=url(r['news_url'])
                 if not r['name']:raise ValueError('사이트 이름을 입력하세요.')
-                if shared:webbrowser.open(issue_link(self.owner.cfg.get('community_repo',REPOSITORY),dict(r,action='site_add')))
-                else:self.local.append(r);self.save()
+                r['planned_urls']=[url(x) for x in planned.toPlainText().splitlines() if x.strip()]
+                if shared:webbrowser.open(issue_link(self.owner.cfg.get('community_repo',REPOSITORY),dict(r,action='site_edit' if existing else 'site_add',id=existing.get('id',''))))
+                else:self.registry.update({k:v for k,v in existing.items() if k!='scope'},r['name'],r['url'],r['news_url'],r['planned_urls']);self.local=self.registry.local();self.show_rows();self.owner.refresh_site_choices()
                 d.accept()
             except Exception as e:QMessageBox.warning(d,'입력 확인',str(e))
         lay.addRow(button('등록',send));d.exec()

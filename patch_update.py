@@ -36,6 +36,8 @@ def prepare_patch(result,target,parent_pid):
     if source==target or source.is_relative_to(target/'_internal'):
         raise ValueError('패치 준비 폴더가 올바르지 않습니다.')
     if not (target/'ToonShelf.exe').is_file():raise ValueError('현재 프로그램의 설치 폴더를 찾지 못했습니다.')
+    from update_storage import previous_path,backup_owned
+    if previous_path(target).exists():backup_owned(previous_path(target),target)
     entries=[]
     for path in sorted(source.rglob('*')):
         name=path.relative_to(source).as_posix()
@@ -47,7 +49,10 @@ def prepare_patch(result,target,parent_pid):
     required=sum(e['size']+(safe_path(target,e['name']).stat().st_size if safe_path(target,e['name']).is_file() else 0) for e in entries)
     if shutil.disk_usage(target).free<required+32*1024*1024:raise ValueError('패치와 복구본을 저장할 공간이 부족합니다.')
     manifest=source.parent.parent/'patch.json'
-    manifest.write_text(json.dumps({'source':str(source),'target':str(target),'parent_pid':parent_pid,
+    import re
+    try:previous_version=re.search(r'\d+\.\d+\.\d+',(target/'RELEASE_NOTES.md').read_text(encoding='utf-8')).group()
+    except (OSError,AttributeError):previous_version='이전 설치 버전'
+    manifest.write_text(json.dumps({'source':str(source),'target':str(target),'parent_pid':parent_pid,'previous_version':previous_version,
         'version':result['version'],'release_sha256':result['sha256'],'files':entries},ensure_ascii=False,indent=2),encoding='utf-8')
     return str(manifest)
 
@@ -86,7 +91,10 @@ def apply_patch(manifest,wait=wait_for_exit,launch=restart):
         src=safe_path(source,entry['name']);safe_path(target,entry['name'])
         if digest(src)!=entry['sha256']:raise ValueError('준비한 패치가 변경되었습니다. 다시 다운로드하세요.')
     wait(data['parent_pid'])
-    backup=manifest.parent/'backup';backup.mkdir(exist_ok=False);touched=[]
+    from update_storage import clear_previous,previous_path,MARKER
+    clear_previous(target);backup=previous_path(target);backup.mkdir(exist_ok=False);touched=[]
+    backup_meta={'target':str(target),'version':data.get('previous_version','이전 설치 버전'),'kind':'ToonShelf recovery','status':'applying'}
+    (backup/MARKER).write_text(json.dumps(backup_meta,ensure_ascii=False),encoding='utf-8')
     status={'version':data['version'],'time':datetime.now(timezone.utc).isoformat(),
             'release_sha256':data['release_sha256'],'backup':str(backup),'status':'applying'}
     log=manifest.parent/'result.json'
@@ -95,14 +103,14 @@ def apply_patch(manifest,wait=wait_for_exit,launch=restart):
             name=entry['name'];src=safe_path(source,name);dest=safe_path(target,name)
             old=backup/name;existed=dest.exists()
             if existed:
-                old.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(dest,old)
+                old.parent.mkdir(parents=True,exist_ok=True);replace_file(old,dest)
+            touched.append((name,existed))
             dest.parent.mkdir(parents=True,exist_ok=True)
             temp=dest.with_name(dest.name+'.toonshelf-patch-tmp')
             try:
                 shutil.copy2(src,temp);replace_file(dest,temp)
             finally:
                 if temp.exists():temp.unlink()
-            touched.append((name,existed))
         status['status']='complete'
     except Exception as error:
         status.update(status='rolled_back',error=str(error));rollback_errors=[]
@@ -114,6 +122,7 @@ def apply_patch(manifest,wait=wait_for_exit,launch=restart):
                 else:dest.unlink(missing_ok=True)
             except Exception as e:rollback_errors.append(str(e))
         if rollback_errors:status.update(status='recovery_required',rollback_errors=rollback_errors)
+    backup_meta['status']=status['status'];backup_meta['files']={p.relative_to(backup).as_posix():digest(p) for p in backup.rglob('*') if p.is_file() and p.name!=MARKER};(backup/MARKER).write_text(json.dumps(backup_meta,ensure_ascii=False),encoding='utf-8')
     log.write_text(json.dumps(status,ensure_ascii=False,indent=2),encoding='utf-8')
     history=target/'state'/'update_history.jsonl';history.parent.mkdir(exist_ok=True)
     with history.open('a',encoding='utf-8') as f:f.write(json.dumps(status,ensure_ascii=False)+'\n')

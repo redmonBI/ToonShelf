@@ -22,7 +22,7 @@ class PatchTests(unittest.TestCase):
    self.assertEqual((target/'ToonShelf.exe').read_bytes(),b'new');self.assertEqual((target/'_internal'/'module.dll').read_bytes(),b'new dll')
    self.assertEqual((target/'state'/'settings.json').read_bytes(),b'personal');self.assertEqual((target/'Downloads'/'image.jpg').read_bytes(),b'original');self.assertEqual((target/'custom.txt').read_bytes(),b'keep')
    self.assertEqual(calls,[os.getpid(),target/'ToonShelf.exe'])
-   self.assertEqual((manifest.parent/'backup'/'ToonShelf.exe').read_bytes(),b'old')
+   self.assertEqual((target/'PreviousVersion'/'ToonShelf.exe').read_bytes(),b'old')
  def test_failed_patch_rolls_back_and_launches_old_program(self):
   with tempfile.TemporaryDirectory() as tmp:
    target,stage,manifest=self.fixture(Path(tmp));real_replace=updater.replace_file;calls=[]
@@ -38,7 +38,7 @@ class PatchTests(unittest.TestCase):
    with tempfile.TemporaryDirectory() as tmp:
     target,stage,manifest=self.fixture(Path(tmp))
     if traversal:
-     data=json.loads(manifest.read_text());data['files'][0]['name']='../outside';manifest.write_text(json.dumps(data))
+     data=json.loads(manifest.read_text(encoding='utf-8'));data['files'][0]['name']='../outside';manifest.write_text(json.dumps(data),encoding='utf-8')
     else:(stage/'ToonShelf.exe').write_bytes(b'changed')
     with self.assertRaises(ValueError):updater.apply_patch(manifest,wait=lambda p:self.fail('must not wait'),launch=lambda p:self.fail('must not restart'))
     self.assertEqual((target/'ToonShelf.exe').read_bytes(),b'old')

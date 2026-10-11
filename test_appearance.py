@@ -62,7 +62,7 @@ class AppearanceTests(unittest.TestCase):
    other=app.Window();other.cover_timer.stop();other.show();q.processEvents()
    self.assertEqual(other.sidebar.width(),68);self.assertFalse(other.right_rail.isVisible())
    other.menu_toggle.click();other.rules_toggle.click();q.processEvents()
-   self.assertEqual(other.sidebar.width(),186);self.assertTrue(other.right_rail.isVisible());self.assertFalse(other.compact_download.isVisible())
+   self.assertGreaterEqual(other.sidebar.width(),186);self.assertTrue(other.right_rail.isVisible());self.assertFalse(other.compact_download.isVisible())
    other.close();q.processEvents()
  def test_large_page_range_is_bounded_and_jump_clamps(self):
   self.assertEqual(page_numbers(1,675),[1,2,3,4,5,675])

@@ -9,7 +9,7 @@ from automation_store import AutoStore
 from collections_store import CollectionStore,as_work
 from queue_store import QueueStore
 
-SYNC_KEYS={'theme','menu_compact','rules_hidden','reader_focus','reader_hide_top','reader_hide_bottom','reader_background','reader_width','reader_mode','hidden_genres','catalog_sort','latest_count','notifications_enabled','download_concurrency','network_policy'}
+SYNC_KEYS={'theme','menu_compact','rules_hidden','rules_folded','queue_view','reader_focus','reader_hide_top','reader_hide_bottom','reader_background','reader_width','reader_mode','hidden_genres','catalog_sort','latest_count','notifications_enabled','download_concurrency','network_policy'}
 ACCOUNT_SERVER='https://toon-shelf-sync.lovable.app/api/public'
 
 class PendingConflict(ValueError):
@@ -128,6 +128,7 @@ class AccountCoordinator(QObject):
         host.auto_store.import_data(payload.get('lists',{}));host.collection_store.import_data(payload.get('favorites',{}));host.cfg['reading_positions']=payload.get('reading',{})
         self.history=list(payload.get('history',[]));self.history_file().write_text(json.dumps(self.history,ensure_ascii=False),encoding='utf-8')
         host.apply_theme(host.cfg.get('theme','white'),persist=False);host.set_menu_compact(host.cfg.get('menu_compact',False),False);host.set_rules_hidden(host.cfg.get('rules_hidden',False),False)
+        if hasattr(host,'set_rules_fold'):host.set_rules_fold(host.cfg.get('rules_folded',False),False);host.queue_view.setCurrentIndex(host.cfg.get('queue_view',0))
         host.latest.blockSignals(True);host.latest.setCurrentIndex(max(0,host.latest.findData(host.cfg.get('latest_count',0))));host.latest.blockSignals(False)
         host.start.setEnabled(not host.latest.currentData());host.end.setEnabled(not host.latest.currentData());host.apply_view_preferences();host.persist_settings();host.refresh_notifications()
         host.account_button.setText(self.client.user['display_name']+' · 계정');self.last_hash=pending.get('baseline_hash','') if pending else self.hash(self.snapshot())
@@ -156,6 +157,7 @@ class AccountCoordinator(QObject):
         host.auto_store=automatic;host.collection_store=collection;host.queue=queue;host.cfg=copy.deepcopy(cfg);host.queue_running=False;host.batch_ids.clear();host.queue_metrics.clear();host.selected.clear();host.apply_theme(host.cfg.get('theme','white'),False);host.set_menu_compact(host.cfg.get('menu_compact',False),False);host.set_rules_hidden(host.cfg.get('rules_hidden',False),False);host.persist_settings();host.account_button.setText('계정 · 로그인');host.refresh_notifications()
         host.latest.blockSignals(True);host.latest.setCurrentIndex(max(0,host.latest.findData(host.cfg.get('latest_count',0))));host.latest.blockSignals(False)
         host.start.setEnabled(not host.latest.currentData());host.end.setEnabled(not host.latest.currentData());host.apply_view_preferences()
+        if hasattr(host,'set_rules_fold'):host.set_rules_fold(host.cfg.get('rules_folded',False),False);host.queue_view.setCurrentIndex(host.cfg.get('queue_view',0))
         pane=getattr(host,'offline',None)
         if pane:pane.back();pane.work=None
         if self.history_file().exists():

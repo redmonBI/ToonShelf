@@ -36,7 +36,7 @@ class WorkSettingsDialog(QDialog):
 
 class NotificationsDialog(QDialog):
     def __init__(self,host):
-        super().__init__(host);self.host=host;self.store=host.collection_store;self.task=None;self.setWindowTitle('ToonShelf · 새 회차 알림');self.resize(950,650);lay=QVBoxLayout(self)
+        super().__init__(host);self.host=host;self.store=host.collection_store;self.task=None;self.dismissed=False;self.setWindowTitle('ToonShelf · 새 회차 알림');self.resize(950,650);lay=QVBoxLayout(self)
         title=QLabel('새로운 이야기가 도착했어요');title.setStyleSheet('font-size:24px;font-weight:700');lay.addWidget(title)
         note=QLabel('즐겨찾기와 자동 다운로드 작품을 확인합니다. 첫 조회는 기준만 저장하고, 다음 조회부터 새 회차를 알려드립니다.');note.setWordWrap(True);lay.addWidget(note)
         self.enabled=QCheckBox('프로그램 실행 중 30분마다 새 회차 확인');self.enabled.setChecked(host.cfg.get('notifications_enabled',False));self.enabled.toggled.connect(self.save);lay.addWidget(self.enabled)
@@ -44,6 +44,10 @@ class NotificationsDialog(QDialog):
         self.table=QTableWidget(0,5);self.table.setHorizontalHeaderLabels(['작품 / 새 회차','등록 확인','알림','자동 목록','바로 받기']);self.table.verticalHeader().hide();self.table.verticalHeader().setDefaultSectionSize(52);self.table.horizontalHeader().setSectionResizeMode(0,QHeaderView.Stretch);lay.addWidget(self.table,1)
         self.status=QLabel();self.status.setWordWrap(True);lay.addWidget(self.status);self.busy=QProgressBar();self.busy.setRange(0,0);self.busy.hide();lay.addWidget(self.busy);close=QPushButton('닫기');close.clicked.connect(self.accept);lay.addWidget(close,alignment=Qt.AlignRight);self.refresh()
         self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(1000);self.finished.connect(self.timer.stop)
+        self.finished.connect(self.dismiss)
+    def dismiss(self,*_):
+        self.dismissed=True
+        if self.task and self.task.isRunning():self.task.control.stopped.set()
     def save(self,value):self.host.cfg['notifications_enabled']=bool(value);self.host.persist_settings()
     def mark_all(self):self.store.mark_read();self.refresh();self.notify()
     def notify(self):
@@ -68,17 +72,20 @@ class NotificationsDialog(QDialog):
             self.store.mark_read([n['id']]);self.refresh();self.notify();self.status.setText('최신 회차를 다운로드 대기열에 추가했습니다.')
         except Exception as exc:self.status.setText(str(exc))
     def check(self):
-        if self.task and self.task.isRunning():return
+        if self.host.notification_job and self.host.notification_job.isRunning():self.status.setText('이전 새 회차 확인을 정리 중입니다.');return
         try:cfg=self.host.read_cfg()
         except ValueError as exc:self.status.setText(str(exc));return
         from library_ui import LibraryTask
-        self.task=LibraryTask(lambda control,emit:check_updates(self.store,self.host.auto_store,cfg,control,emit));self.host.notification_job=self.task;self.busy.show();self.status.setText('작품별 새 회차 확인 중…')
-        self.task.done.connect(self.done);self.task.finished.connect(lambda:self.busy.hide());self.task.start()
-    def done(self,state,result):
+        self.task=LibraryTask(lambda control,emit:check_updates(self.store,self.host.auto_store,cfg,control,emit));self.task.setParent(self.host);self.host.notification_job=self.task;self.busy.show();self.status.setText('작품별 새 회차 확인 중…')
+        self.task.done.connect(self.checked_result);self.task.finished.connect(lambda:self.busy.hide());self.task.start()
+    def checked_result(self,state,result):
+        if self.dismissed:return
         self.status.setText(f"{result['checked']}개 작품 확인 · 새 회차 {result['added']}개 · 오류 {len(result['errors'])}건" if state=='success' else '확인 '+('중단' if state=='cancelled' else '실패 · '+str(result)));self.refresh();self.notify()
     def reject(self):
-        if self.task and self.task.isRunning():self.task.control.stopped.set();self.status.setText('확인을 중단하는 중…');return
+        self.dismiss()
         super().reject()
     def accept(self):
-        if self.task and self.task.isRunning():self.task.control.stopped.set();self.status.setText('확인을 중단하는 중…');return
+        self.dismiss()
         super().accept()
+    def closeEvent(self,event):
+        self.dismiss();super().closeEvent(event)

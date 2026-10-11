@@ -21,6 +21,8 @@ class SettingsCenter(QDialog):
         self.theme.currentIndexChanged.connect(lambda i:host.apply_theme(list(themes.THEMES)[i]));screen.addRow('프로그램 테마',self.theme)
         self.check(screen,'왼쪽 메뉴를 작게 표시','menu_compact',host.set_menu_compact)
         self.check(screen,'오른쪽 저장 규칙 숨기기','rules_hidden',host.set_rules_hidden)
+        self.check(screen,'저장 규칙 내용만 접기','rules_folded',host.set_rules_fold)
+        queue_mode=QComboBox();queue_mode.addItems(['상세','심플 · 퍼센트','축소 · 상위 5개 그래프']);queue_mode.setCurrentIndex(host.cfg.get('queue_view',0));queue_mode.currentIndexChanged.connect(host.queue_view.setCurrentIndex);screen.addRow('다운로드 화면',queue_mode)
         screen.addRow(QLabel('모든 화면 상단의 ⚙ 설정에서 다시 변경할 수 있습니다.'))
         reader=self.page('읽기');self.mode=QComboBox();self.mode.addItems(['프로그램 안에서 세로로 읽기','OpenComic 별도 창으로 읽기']);self.mode.setCurrentIndex(int(host.cfg.get('reader_mode')=='opencomic'));self.mode.currentIndexChanged.connect(self.change_mode);reader.addRow('기본 뷰어',self.mode)
         self.check(reader,'집중 보기 · 메뉴와 위·아래 도구 숨기기','reader_focus')
@@ -48,6 +50,8 @@ class SettingsCenter(QDialog):
         convenience=self.page('관리·업데이트')
         for text,fn in [('자동 다운로드 목록·예약·보관 정리',host.automation_dialog),('다운로드 대기열 관리',host.queue_dialog),('완료 후 종료·타이머',host.power_dialog),('다운로드 기록·내보내기',host.history),('업데이트 확인·기존 폴더 패치',host.updates_dialog)]:convenience.addRow(button(text,lambda checked=False,fn=fn:self.open_manager(fn)))
         if hasattr(host,'accounts'):convenience.addRow(button('내 계정·로그인·동기화',lambda:self.open_manager(host.accounts)))
+        from update_storage_ui import UpdateStorageDialog
+        convenience.addRow(button('이전 버전 삭제·업데이트 저장 공간',lambda:self.open_manager(lambda:UpdateStorageDialog(host).exec())))
         note=QLabel('업데이트 파일을 검사한 뒤 기존 프로그램 폴더에 패치합니다.\n내 설정, 읽던 위치와 다운로드한 작품은 유지됩니다.');note.setWordWrap(True);convenience.addRow(note)
         self.tabs.setCurrentIndex(page);layout.addWidget(button('닫기',self.accept),alignment=Qt.AlignRight)
     def page(self,title):

@@ -69,7 +69,9 @@ class AccountDialog(QDialog):
         self.progress=QProgressBar();self.progress.setRange(0,0);self.progress.hide();layout.addWidget(self.progress);self.status=QLabel('계정 서버 연결을 설정하세요.');self.status.setTextFormat(Qt.PlainText);self.status.setWordWrap(True);layout.addWidget(self.status);layout.addWidget(self.button('닫기',self.accept));self.refresh()
     def button(self,text,fn):
         button=QPushButton(text);button.clicked.connect(fn);return button
-    def dialog_finished(self,*_):self.host.accounts_dialog_open=False
+    def dialog_finished(self,*_):
+        self.dismissed=True
+        if not (self.job and self.job.isRunning()):self.host.accounts_dialog_open=False
     def switch_allowed(self):
         try:
             callback=getattr(self.host,'account_can_switch',None)
@@ -86,6 +88,7 @@ class AccountDialog(QDialog):
         from app_services import PendingConflict
         try:self.host.account_apply(payload)
         except PendingConflict:
+            if getattr(self,'dismissed',False):raise ValueError('목록이 충돌했습니다. 계정 화면에서 불러오기를 눌러 사용할 목록을 선택하세요.')
             box=QMessageBox(self);box.setWindowTitle('미전송 목록과 서버 목록');box.setText('이 PC에 아직 보내지 못한 변경사항이 있고, 서버 목록도 다른 기기에서 변경되었습니다. 사용할 목록을 선택하세요.');box.setInformativeText('이 PC 목록을 선택하면 다음 저장 때 서버에 반영합니다. 서버 목록을 선택해도 이 PC의 미전송 목록은 별도 보관 파일로 남깁니다.');local=box.addButton('이 PC의 변경사항 사용',QMessageBox.AcceptRole);server=box.addButton('서버 목록 사용',QMessageBox.DestructiveRole);box.addButton('나중에 선택',QMessageBox.RejectRole);box.exec()
             if box.clickedButton() is local:choice='local'
             elif box.clickedButton() is server:choice='server'
@@ -117,7 +120,9 @@ class AccountDialog(QDialog):
         try:
             if callback:callback(data)
         except Exception as exc:self.status.setText(str(exc))
-    def job_finished(self):self.progress.hide();self.tabs.setEnabled(True);self.refresh()
+    def job_finished(self):
+        self.progress.hide();self.tabs.setEnabled(True);self.refresh()
+        if getattr(self,'dismissed',False):self.host.accounts_dialog_open=False
     def login(self):
         if not self.switch_allowed():return
         try:
@@ -242,11 +247,8 @@ class AccountDialog(QDialog):
         def work():self.client.config();self.client.set_labels(labels);return labels
         self.run(work,lambda labels:getattr(self.host,'account_apply_labels',lambda _:None)(labels))
     def closeEvent(self,event):
-        if self.job and self.job.isRunning():self.status.setText('연결 작업이 끝나면 닫을 수 있습니다.');event.ignore()
-        else:super().closeEvent(event)
+        super().closeEvent(event)
     def reject(self):
-        if self.job and self.job.isRunning():return
         super().reject()
     def accept(self):
-        if self.job and self.job.isRunning():return
         super().accept()

@@ -17,14 +17,15 @@ class Task(QThread):
         except Exception as e:self.done.emit(False,str(e))
 
 class TaskDialog(QDialog):
-    def __init__(self,parent):super().__init__(parent);self.tasks=[]
+    def __init__(self,parent):
+        super().__init__(parent);self.tasks=[];self.dismissed=False
+        self.finished.connect(lambda _:setattr(self,'dismissed',True))
     def task(self,fn,callback):
-        job=Task(fn);self.tasks.append(job);job.done.connect(callback)
-        job.finished.connect(lambda:self.tasks.remove(job));job.start()
+        job=Task(fn);job.setParent(self.window().parentWidget() or self);self.tasks.append(job)
+        job.done.connect(lambda ok,result:callback(ok,result) if not self.dismissed else None)
+        job.finished.connect(lambda:self.tasks.remove(job));job.finished.connect(job.deleteLater);job.start()
     def closeEvent(self,e):
-        if any(t.isRunning() for t in self.tasks):
-            QMessageBox.information(self,'처리 중','현재 요청이 끝난 뒤 닫아주세요.');e.ignore()
-        else:e.accept()
+        self.dismissed=True;super().closeEvent(e)
 
 class QueueDialog(QDialog):
     def __init__(self,parent):
@@ -166,6 +167,7 @@ class UpdatesDialog(TaskDialog):
         n=self.table.currentRow()
         if hasattr(self,'rows') and 0<=n<len(self.rows):self.notes.setPlainText(self.rows[n].get('body') or '')
     def install(self):
+        if any(t.isRunning() for t in self.owner.findChildren(QThread)):self.info.setText('이전 연결 작업을 정리 중입니다. 완료 후 다시 설치하세요.');return
         import sys
         if (getattr(self.owner,'accounts_service',None) and self.owner.accounts_service.busy()) or (getattr(self.owner,'notification_job',None) and self.owner.notification_job.isRunning()):QMessageBox.information(self,'작업 중','계정·새 회차 확인이 끝난 뒤 설치하세요.');return
         if not getattr(sys,'frozen',False):QMessageBox.information(self,'실행 파일 필요','배포된 ToonShelf.exe에서 자체 업데이트를 사용하세요.');return
@@ -181,7 +183,8 @@ class UpdatesDialog(TaskDialog):
         selected=self.rows[n];target=Path(sys.executable).resolve().parent
         def prepare():
             result=prepare_update(selected,target/'Updates',self.owner.cfg.get('community_repo',REPOSITORY))
-            result['manifest']=prepare_patch(result,target,os.getpid());return result
+            result['manifest']=prepare_patch(result,target,os.getpid())
+            (Path(result['manifest']).parent/'result.json').write_text(json.dumps({'status':'prepared','version':result['version']},ensure_ascii=False),encoding='utf-8');return result
         self.task(prepare,self.installed)
     def installed(self,ok,result):
         self.busy.hide();self.install_button.setEnabled(True);self.check_button.setEnabled(True)
@@ -191,6 +194,7 @@ class UpdatesDialog(TaskDialog):
             self.info.setText('패치 준비 완료 · 진행 중인 작업을 종료하고 다시 업데이트하세요.');return
         self.info.setText('패치 적용 준비 완료 · 프로그램을 재시작합니다…');self.busy.show();self.install_button.setEnabled(False)
         def apply():
+            if self.dismissed:return
             import subprocess
             try:
                 if getattr(self.owner,'offline',None) and not self.owner.offline.shutdown():raise RuntimeError('뷰어 작업을 종료한 뒤 다시 시도하세요.')

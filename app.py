@@ -199,6 +199,7 @@ class Window(QMainWindow):
         from app_services import AccountCoordinator
         self.accounts_service=AccountCoordinator(self,STATE)
         if not os.environ.get('TOONSHELF_TESTING') and not any(a.startswith('--') for a in sys.argv[1:]):QTimer.singleShot(2500,self.check_updates)
+        if getattr(sys,'frozen',False) and not os.environ.get('TOONSHELF_TESTING'):QTimer.singleShot(3500,self.clean_completed_patch)
 
     def build(self):
         root = QWidget()
@@ -272,6 +273,7 @@ class Window(QMainWindow):
         row.addWidget(self.scan_button)
         row.addWidget(button('전체 갱신',self.scan))
         sl.addLayout(row)
+        saved=QHBoxLayout();self.site_choices=QComboBox();self.site_choices.setMinimumContentsLength(14);self.site_choices.currentIndexChanged.connect(self.choose_registered_site);saved.addWidget(self.site_choices,1);saved.addWidget(button('등록 사이트 관리',self.sites_dialog));sl.addLayout(saved);self.refresh_site_choices()
         main.addWidget(source)
         tools = QHBoxLayout()
         self.search = QLineEdit()
@@ -325,10 +327,11 @@ class Window(QMainWindow):
         right.addWidget(label('DOWNLOAD STUDIO', 'muted'))
         panel = QFrame()
         panel.setObjectName('panel')
-        pl = QVBoxLayout(panel)
+        panel_layout=QVBoxLayout(panel);self.rules_fold=button('저장 규칙 접기 ▴',self.toggle_rules_fold);panel_layout.addWidget(self.rules_fold)
+        self.rules_body=QWidget();panel_layout.addWidget(self.rules_body)
+        pl = QVBoxLayout(self.rules_body)
         pl.setContentsMargins(17, 18, 17, 18)
         pl.setSpacing(12)
-        pl.addWidget(label('저장 규칙', size=17))
         pl.addWidget(label('저장 위치', 'muted'))
         self.path = QLineEdit(self.cfg['output_dir'])
         self.path.setToolTip(self.cfg['output_dir'])
@@ -374,7 +377,8 @@ class Window(QMainWindow):
         right.addWidget(panel)
         progress = QFrame()
         progress.setObjectName('panel')
-        pr = QVBoxLayout(progress)
+        progress_layout=QVBoxLayout(progress);self.queue_view=QComboBox();self.queue_view.addItems(['다운로드 상세','심플 · 퍼센트','축소 · 상위 5개 그래프']);progress_layout.addWidget(self.queue_view)
+        self.queue_detail=QWidget();progress_layout.addWidget(self.queue_detail);pr = QVBoxLayout(self.queue_detail)
         pr.setContentsMargins(17, 16, 17, 16)
         self.current = label('다운로드 대기 중', size=15)
         self.current.setWordWrap(True)
@@ -385,6 +389,7 @@ class Window(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
+        self.progress.setMinimumHeight(24);self.progress.setFormat('%p%')
         pr.addWidget(self.progress)
         self.image_progress = label('이미지 0 / 0', 'muted')
         pr.addWidget(self.image_progress)
@@ -405,13 +410,20 @@ class Window(QMainWindow):
         row.addWidget(self.pause_button)
         row.addWidget(self.stop_button)
         pr.addLayout(row)
+        self.queue_simple=QProgressBar();self.queue_simple.setRange(0,100);self.queue_simple.setMinimumHeight(24);progress_layout.addWidget(self.queue_simple)
+        from compact_queue import CompactQueue
+        self.queue_compact=CompactQueue(self);progress_layout.addWidget(self.queue_compact)
+        progress_layout.addWidget(button('전체 진행 보기',self.download_dashboard))
+        self.queue_view.currentIndexChanged.connect(self.set_queue_view)
+        self.queue_view.setCurrentIndex(int(self.cfg.get('queue_view',0)));self.set_queue_view(self.queue_view.currentIndex(),False)
         right.addWidget(progress)
         right.addWidget(label('ACTIVITY  /  작업 기록', 'muted'))
         self.logs = QPlainTextEdit()
         self.logs.setReadOnly(True)
         self.logs.setMaximumBlockCount(700)
         right.addWidget(self.logs, 1)
-        download_layout.addWidget(rail)
+        rail_scroll=QScrollArea();rail_scroll.setWidgetResizable(True);rail_scroll.setWidget(rail);rail_scroll.setFixedWidth(320);self.right_rail=rail_scroll;download_layout.addWidget(rail_scroll)
+        self.set_rules_fold(bool(self.cfg.get('rules_folded',False)),False)
         self.set_menu_compact(bool(self.cfg.get('menu_compact',False)),persist=False)
         self.set_rules_hidden(bool(self.cfg.get('rules_hidden',False)),persist=False)
         self.render()
@@ -432,7 +444,9 @@ class Window(QMainWindow):
 
     def toggle_menu(self):self.set_menu_compact(not self.cfg.get('menu_compact',False))
     def set_menu_compact(self,compact,persist=True):
-        self.cfg['menu_compact']=compact;self.sidebar.setFixedWidth(68 if compact else 186)
+        from PySide6.QtGui import QFontMetrics
+        metrics=QFontMetrics(self.sidebar.font());expanded=max(186,min(340,max((metrics.horizontalAdvance(text) for _,text in self.sidebar_buttons),default=118)+70))
+        self.cfg['menu_compact']=compact;self.sidebar.setFixedWidth(68 if compact else expanded)
         self.sidebar_layout.setContentsMargins(8 if compact else 19,30,8 if compact else 19,24)
         self.brand.setText('◈' if compact else '◈  ToonShelf')
         for widget in self.sidebar_labels:widget.setVisible(not compact)
@@ -443,10 +457,28 @@ class Window(QMainWindow):
         if persist:self.persist_settings()
 
     def toggle_rules(self):self.set_rules_hidden(not self.cfg.get('rules_hidden',False))
+    def toggle_rules_fold(self):self.set_rules_fold(not self.cfg.get('rules_folded',False))
+    def set_rules_fold(self,value,persist=True):
+        self.cfg['rules_folded']=bool(value);self.rules_body.setVisible(not value);self.rules_fold.setText('저장 규칙 펼치기 ▾' if value else '저장 규칙 접기 ▴')
+        self.compact_download.setVisible(bool(value or self.cfg.get('rules_hidden')))
+        if persist:self.persist_settings()
+    def set_queue_view(self,index,persist=True):
+        index=max(0,min(2,index));self.cfg['queue_view']=index;self.queue_detail.setVisible(index==0);self.queue_simple.setVisible(index==1);self.queue_compact.setVisible(index==2)
+        if persist:self.persist_settings()
+    def refresh_site_choices(self):
+        from site_registry import SiteRegistry
+        if not hasattr(self,'site_choices'):return
+        self.site_choices.blockSignals(True);self.site_choices.clear();self.site_choices.addItem('등록 사이트 불러오기 · 직접 입력도 가능',None)
+        for row in SiteRegistry(self.state_dir).rows():
+            self.site_choices.addItem(row['name']+' · '+row['scope'],row['url']);self.site_choices.setItemData(self.site_choices.count()-1,row['url'],Qt.ToolTipRole)
+        self.site_choices.blockSignals(False)
+    def choose_registered_site(self,index):
+        address=self.site_choices.itemData(index)
+        if address:self.url.setText(address);self.status.setText('등록된 최신 주소를 선택했습니다. 목록 불러오기를 누르세요.')
     def set_rules_hidden(self,hidden,persist=True):
         self.cfg['rules_hidden']=hidden;self.right_rail.setVisible(not hidden)
         self.rules_toggle.setText('저장 규칙 표시' if hidden else '저장 규칙 숨기기')
-        self.compact_download.setVisible(hidden)
+        self.compact_download.setVisible(bool(hidden or self.cfg.get('rules_folded')))
         if hasattr(self,'pager'):self.render()
         if persist:self.persist_settings()
 
@@ -788,6 +820,13 @@ class Window(QMainWindow):
         LibraryDialog(self).exec()
 
     def closeEvent(self, event):
+        if not getattr(self,'closing_requested',False):
+            self.closing_requested=True;self.automation_closed=True;self.queue_running=False
+            self.power.cancel()
+            self.centralWidget().setEnabled(False)
+            for timer in (self.automation_timer,self.notification_timer,self.queue_timer,self.cover_timer,self.update_timer):timer.stop()
+            self.close_retry=QTimer(self);self.close_retry.setInterval(150);self.close_retry.timeout.connect(self.close);self.close_retry.start()
+        self.status.setText('작업을 안전하게 정리하고 종료합니다…')
         if self.notification_job and self.notification_job.isRunning():self.notification_job.control.stopped.set();self.status.setText('새 회차 확인 정리 중 · 잠시 후 다시 닫아주세요');event.ignore();return
         if self.accounts_service.busy():self.status.setText('계정 동기화가 끝난 뒤 닫아주세요');event.ignore();return
         if self.auto_job and self.auto_job.isRunning():
@@ -804,6 +843,10 @@ class Window(QMainWindow):
             self.status.setText('작업 종료 중 · 잠시 후 다시 닫아주세요')
             event.ignore()
             return
+        if any(t.isRunning() for t in self.findChildren(QThread)):
+            event.ignore();return
+        for dialog in self.findChildren(QDialog):
+            if dialog.isVisible():dialog.close()
         try:
             self.read_cfg()
         except ValueError:
@@ -814,6 +857,7 @@ class Window(QMainWindow):
         self.speed_timer.stop();self.cover_timer.stop();self.queue_timer.stop();self.disk_timer.stop();self.update_timer.stop()
         self.accounts_service.stop()
         self.automation_closed=True
+        self.close_retry.stop()
         event.accept()
 
     def queue_dialog(self):
@@ -827,6 +871,12 @@ class Window(QMainWindow):
     def sites_dialog(self):
         from sites_ui import SitesDialog
         SitesDialog(self).exec()
+        self.refresh_site_choices()
+    def clean_completed_patch(self):
+        from update_storage import cleanup_applied_stages
+        from control_ui import Task
+        if self.automation_closed:return
+        self.storage_job=Task(lambda:cleanup_applied_stages(APP_DIR));self.storage_job.setParent(self);self.storage_job.start()
     def updates_dialog(self):
         from control_ui import UpdatesDialog
         UpdatesDialog(self).exec()
@@ -948,6 +998,8 @@ class Window(QMainWindow):
         if not ok:self.update_button.setText('v'+VERSION+' · 확인 실패 · 다시 확인');return
         from sharing import version_tuple
         self.community_cache=value['community'];self.render()
+        from site_registry import SiteRegistry
+        SiteRegistry(self.state_dir).cache_shared(value['community'].get('sites',[]));self.refresh_site_choices()
         rows=[r for r in value['releases'] if not r.get('draft') and not r.get('prerelease')]
         self.update_rows=rows
         newer=[]
@@ -991,6 +1043,8 @@ class Window(QMainWindow):
 
     def refresh_speed(self):
         if self.automation_closed:return
+        if self.cfg.get('queue_view')==2:self.queue_compact.refresh()
+        self.queue_simple.setValue(self.progress.value());self.queue_simple.setFormat('%p% · '+self.current.text())
         from download_metrics import duration
         from library import size_text
         active=self.queue_job or (self.job if self.job and self.job.kind=='download' else None)
@@ -1064,7 +1118,7 @@ class Window(QMainWindow):
 
     def accounts(self):
         from account_ui import AccountDialog
-        if self.accounts_service.busy():self.status.setText('계정 동기화 중 · 잠시 후 다시 열어주세요');return
+        if self.accounts_service.busy() or getattr(self,'accounts_dialog_open',False):self.status.setText('계정 작업을 정리 중입니다. 잠시 후 다시 열어주세요.');return
         AccountDialog(self).exec()
 
     def account_snapshot(self):return self.accounts_service.snapshot()

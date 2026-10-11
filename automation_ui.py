@@ -19,12 +19,12 @@ def table(headers):
 
 class AutomationDialog(QDialog):
     def __init__(self,host):
-        super().__init__(host);self.host=host;self.store=host.auto_store;self.setWindowTitle('ToonShelf · 자동 다운로드');self.resize(1150,820)
+        super().__init__(host);self.host=host;self.store=host.auto_store;self.setWindowTitle('ToonShelf · 내 웹툰 목록 (자동 다운로드)');self.resize(1150,820)
         lay=QVBoxLayout(self);lay.setContentsMargins(24,20,24,20);title=QLabel('매주 돌아오는 나의 작품');title.setStyleSheet('font-size:25px;font-weight:700');lay.addWidget(title)
         note=QLabel('한국 시간 기준 · 프로그램 실행 중 예약을 처리합니다. 꺼져 있던 동안의 예약은 당일 재실행 시 한 번 처리합니다.');note.setWordWrap(True);lay.addWidget(note)
         self.tabs=QTabWidget();lay.addWidget(self.tabs,1)
         page=QWidget();p=QVBoxLayout(page);tools=QHBoxLayout();self.filter=QComboBox();self.filter.addItems(['모든 작품']+list(CATEGORIES.values()));self.filter.currentIndexChanged.connect(self.render);self.search=QLineEdit();self.search.setPlaceholderText('자동 목록 안에서 작품 검색');self.search.textChanged.connect(self.render);tools.addWidget(self.filter);tools.addWidget(self.search,1)
-        tools.addWidget(button('체크한 사이트 작품 추가',self.add_selected));tools.addWidget(button('읽고 있는 작품 추가',self.add_current));p.addLayout(tools)
+        tools.addWidget(button('작품 검색·추가',self.find_works));tools.addWidget(button('체크한 사이트 작품 추가',self.add_selected));tools.addWidget(button('읽고 있는 작품 추가',self.add_current));p.addLayout(tools)
         self.collection_filters=CollectionFilters(self.render,self);p.addWidget(self.collection_filters)
         self.list=table(['예약 체크','작품명','목록 분류','업데이트 범위','남길 최신 회차','보관 기간 (일)','작품 요일','즐겨찾기']);p.addWidget(self.list,1)
         for i,width in enumerate([90,250,150,150,160,160]):self.list.setColumnWidth(i,width)
@@ -82,6 +82,10 @@ class AutomationDialog(QDialog):
         works=[w for w in self.host.works if w.url in self.host.selected]
         if not works:self.status.setText('사이트 작품 목록에서 추가할 작품을 체크하세요.');return
         self.store.add(works);self.copy_days(works);self.render();self.status.setText(f'{len(works)}개 작품 추가 · 분류와 업데이트 범위를 설정하세요.')
+    def find_works(self):
+        from work_finder import WorkFinder
+        def add(works):self.store.add(works);self.copy_days(works);self.render()
+        WorkFinder(self.host,add).exec()
     def add_current(self):
         pane=getattr(self.host,'offline',None)
         if not pane or not pane.work:self.status.setText('내 작품 라이브러리에서 작품을 먼저 여세요.');return

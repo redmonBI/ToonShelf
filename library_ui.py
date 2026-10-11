@@ -261,10 +261,10 @@ class LibraryDialog(QDialog):
 
     def run_task(self,operation,kind):
         if self.task and self.task.isRunning():return
-        self.task=LibraryTask(operation)
+        self.task=LibraryTask(operation);self.task.setParent(self)
         self.task.event.connect(self.on_event)
         self.task.done.connect(lambda state,result:self.finished_task(kind,state,result))
-        self.task.finished.connect(lambda:(self.set_busy(False),QTimer.singleShot(0,self.refresh) if kind!='refresh' else None))
+        self.task.finished.connect(lambda:(self.set_busy(False),QTimer.singleShot(0,self.refresh) if kind!='refresh' and not getattr(self,'dismiss_requested',False) else None))
         self.set_busy(True);self.task.start()
         self.progress.setRange(0,0)
 
@@ -333,6 +333,7 @@ class LibraryDialog(QDialog):
         elif kind=='export_progress':self.progress.setRange(0,value['total']);self.progress.setValue(value['value'])
 
     def finished_task(self,kind,state,result):
+        if getattr(self,'dismiss_requested',False):return
         self.progress.setRange(0,100);self.progress.setValue(100 if state=='success' else 0)
         if state=='success' and kind=='refresh':
             self.apply_rows(result);self.activity.setText('보관함 준비 완료 · 작품과 회차를 선택하세요.');return
@@ -351,6 +352,15 @@ class LibraryDialog(QDialog):
         if self.task:self.task.control.stopped.set()
 
     def closeEvent(self,event):
+        self.dismiss_requested=True
         if self.task and self.task.isRunning():
-            self.task.control.stopped.set();self.activity.setText('작업을 중단하고 있습니다. 잠시 후 닫아주세요.');event.ignore();return
+            self.task.control.stopped.set();self.activity.setText('작업을 중단하고 있습니다. 완료하면 자동으로 닫힙니다.');event.ignore();QTimer.singleShot(150,self.close);return
         self.persist();event.accept()
+    def reject(self):
+        self.dismiss_requested=True
+        if self.task and self.task.isRunning():self.task.control.stopped.set();QTimer.singleShot(150,self.reject);return
+        self.persist();super().reject()
+    def accept(self):
+        self.dismiss_requested=True
+        if self.task and self.task.isRunning():self.task.control.stopped.set();QTimer.singleShot(150,self.accept);return
+        self.persist();super().accept()

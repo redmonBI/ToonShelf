@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlencode,urlsplit
 from zipfile import ZipFile
 
-VERSION='3.3.0'
+VERSION='3.4.0'
 REPOSITORY='redmonBI/ToonShelf'
 def repository(value):
     value=value.strip().removeprefix('https://github.com/').rstrip('/')
@@ -55,7 +55,8 @@ def prepare_update(release,output,repo=REPOSITORY):
     if not expected or not re.fullmatch('[0-9a-fA-F]{64}',expected):raise ValueError('SHA-256 검증 정보가 없습니다.')
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
     if shutil.disk_usage(output).free<asset['size']*5:raise ValueError('업데이트용 여유 공간이 부족합니다.')
-    stage=Path(tempfile.mkdtemp(prefix='ToonShelf_update_',dir=output))
+    from update_storage import prepare_slot
+    stage=prepare_slot(output)
     try:
         zip_path=stage/'update.zip';sha=hashlib.sha256();count=0
         with urllib.request.urlopen(asset['browser_download_url'],timeout=60) as r,zip_path.open('wb') as f:

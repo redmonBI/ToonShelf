@@ -15,7 +15,7 @@ class Pagination(QWidget):
   self.prev=QPushButton('‹ 이전');self.prev.setObjectName('pageStep');self.prev.clicked.connect(lambda:self.requested.emit(self.current-1));lay.addWidget(self.prev)
   lay.addStretch();self.numbers=QHBoxLayout();self.numbers.setSpacing(4);lay.addLayout(self.numbers)
   lay.addStretch();self.next=QPushButton('다음 ›');self.next.setObjectName('pageStep');self.next.clicked.connect(lambda:self.requested.emit(self.current+1));lay.addWidget(self.next)
-  self.jump=QSpinBox();self.jump.setRange(1,1);self.jump.setPrefix('이동 ');self.jump.setFixedWidth(100);self.jump.setToolTip('원하는 페이지 번호를 입력하고 Enter를 누르세요.');self.jump.editingFinished.connect(self.go);lay.addWidget(self.jump)
+  self.jump=QSpinBox();self.jump.setRange(1,1);self.jump.setPrefix('이동 ');self.jump.setFixedWidth(126);self.jump.setMinimumHeight(38);self.jump.setToolTip('원하는 페이지 번호를 입력하고 Enter를 누르세요.');self.jump.editingFinished.connect(self.go);lay.addWidget(self.jump)
   self.update_pages(0,1)
  def go(self):
   target=self.jump.value()-1

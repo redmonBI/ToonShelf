@@ -27,13 +27,20 @@ def apply_request(data,request,actor,admin,request_id,date=None):
         votes=post.setdefault('votes',[])
         if actor in votes:votes.remove(actor)
         else:votes.append(actor)
-    elif action in ['edit','delete','site_add','site_delete']:
+    elif action in ['edit','delete','site_add','site_edit','site_delete']:
         if action.startswith('site_'):
             if action=='site_add':
                 item={'id':str(request_id),'name':text(request.get('name'),100),'url':url(request.get('url')),
                     'news_url':url(request['news_url']) if request.get('news_url') else '',
                     'created':date,'updated':date}
+                from site_registry import revise_site
+                item=revise_site(item,item['name'],item['url'],item['news_url'],request.get('planned_urls',[]),date)
                 data['sites'].append(item)
+            elif action=='site_edit':
+                from site_registry import revise_site
+                item=next((s for s in data['sites'] if s['id']==str(request.get('id'))),None)
+                if not item:raise ValueError('사이트를 찾지 못했습니다.')
+                revised=revise_site(item,text(request.get('name'),100),request.get('url'),request.get('news_url',''),request.get('planned_urls',[]),date);item.clear();item.update(revised)
             else:data['sites']=[s for s in data['sites'] if s['id']!=str(request.get('id'))]
         else:
             post=next((p for p in data['posts'] if p['id']==str(request.get('id'))),None)
