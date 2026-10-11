@@ -18,7 +18,7 @@ jobs:
       - name: Run tests without shutting down runner
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m unittest test_core test_library test_v3 test_reading test_appearance test_patch_update -v
+        run: python -m unittest test_core test_library test_v3 test_reading test_appearance test_patch_update test_accounts test_collections test_progress test_integration test_account_profiles -v
       - run: python bundle_opencomic.py
       - run: python -m PyInstaller --clean --noconfirm --distpath portable ToonShelf.spec
       - run: python package_v3.py
