@@ -35,12 +35,15 @@ class SettingsCenter(QDialog):
         self.exe=QLineEdit(host.opencomic_path());self.exe.setReadOnly(True);row=QHBoxLayout();row.addWidget(self.exe);row.addWidget(button('찾기…',self.choose_viewer));reader.addRow('OpenComic 실행 파일',row)
         help_text=QLabel('F9: 집중 보기 켜기·끄기  /  Esc: 도구 다시 표시\nAlt + ← / →: 이전·다음 화\n숨긴 상태에서는 화면 오른쪽 위의 ⚙ 또는 도구 표시를 누르세요.\n배경색은 원본 이미지에 영향을 주지 않습니다.');help_text.setWordWrap(True);reader.addRow(help_text)
         download=self.page('다운로드');row=QHBoxLayout();self.path_label=QLabel(host.path.text());self.path_label.setWordWrap(True);row.addWidget(self.path_label,1);row.addWidget(button('저장 폴더 변경…',self.choose_folder));download.addRow('저장 위치',row)
+        from automation_ui import tail_combo
+        self.latest=tail_combo(host.latest.currentData());self.latest.currentIndexChanged.connect(lambda i:host.latest.setCurrentIndex(i));download.addRow('일반 다운로드 범위',self.latest)
+        download.addRow(button('자동 목록·예약·속도 제한 설정',lambda:self.open_manager(host.automation_dialog)))
         self.delay=QDoubleSpinBox();self.delay.setRange(.1,30);self.delay.setSingleStep(.1);self.delay.setValue(host.cfg['delay']);download.addRow('이미지 요청 간격 (초)',self.delay)
         self.browser=QCheckBox('작업용 브라우저 창 표시');self.browser.setChecked(host.cfg['visible_browser']);download.addRow(self.browser)
         self.selector=QLineEdit(host.cfg['image_selector']);download.addRow('본문 이미지 선택자',self.selector)
         note=QLabel('다운로드 설정은 아래 버튼으로 저장하세요.\n진행 중인 작업에는 현재 작업이 끝난 뒤 적용됩니다.');note.setWordWrap(True);download.addRow(note);self.download_status=QLabel();download.addRow(self.download_status);download.addRow(button('다운로드 설정 저장',self.save_download))
         convenience=self.page('관리·업데이트')
-        for text,fn in [('다운로드 대기열 관리',host.queue_dialog),('완료 후 종료·타이머',host.power_dialog),('다운로드 기록·내보내기',host.history),('업데이트 확인·기존 폴더 패치',host.updates_dialog)]:convenience.addRow(button(text,lambda checked=False,fn=fn:self.open_manager(fn)))
+        for text,fn in [('자동 다운로드 목록·예약·보관 정리',host.automation_dialog),('다운로드 대기열 관리',host.queue_dialog),('완료 후 종료·타이머',host.power_dialog),('다운로드 기록·내보내기',host.history),('업데이트 확인·기존 폴더 패치',host.updates_dialog)]:convenience.addRow(button(text,lambda checked=False,fn=fn:self.open_manager(fn)))
         note=QLabel('업데이트 파일을 검사한 뒤 기존 프로그램 폴더에 패치합니다.\n내 설정, 읽던 위치와 다운로드한 작품은 유지됩니다.');note.setWordWrap(True);convenience.addRow(note)
         self.tabs.setCurrentIndex(page);layout.addWidget(button('닫기',self.accept),alignment=Qt.AlignRight)
     def page(self,title):

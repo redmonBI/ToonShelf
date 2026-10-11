@@ -161,6 +161,8 @@ class Window(QMainWindow):
         self.overrides={}
         self.state_dir=STATE
         self.queue=QueueStore(STATE/'queue.sqlite3')
+        from automation_store import AutoStore
+        self.auto_store=AutoStore(STATE/'automation.sqlite3');self.auto_job=None;self.auto_notice='';self.auto_last_check=0;self.automation_closed=False
         self.queue_job=None;self.queue_running=False;self.queue_reason=None;self.batch_ids=set()
         self.power=PowerPlan(STATE/'power_history.jsonl')
         self.community_cache={}
@@ -190,6 +192,7 @@ class Window(QMainWindow):
         self.queue_timer=QTimer(self);self.queue_timer.timeout.connect(self.queue_tick);self.queue_timer.start(1000)
         self.disk_timer=QTimer(self);self.disk_timer.timeout.connect(self.update_disk);self.disk_timer.start(10000)
         self.update_timer=QTimer(self);self.update_timer.timeout.connect(self.check_updates);self.update_timer.start(6*3600*1000)
+        self.automation_timer=QTimer(self);self.automation_timer.timeout.connect(self.automation_tick);self.automation_timer.start(30000)
         if not os.environ.get('TOONSHELF_TESTING') and not any(a.startswith('--') for a in sys.argv[1:]):QTimer.singleShot(2500,self.check_updates)
 
     def build(self):
@@ -221,7 +224,7 @@ class Window(QMainWindow):
         self.sidebar_buttons.append((nav,nav.text()))
         side.addWidget(nav)
         for text, action in [('▣   다운로드 작품', self.show_offline), ('↗   보관함·내보내기', self.history), ('≡   다운로드 대기열', self.queue_dialog),
-                             ('◷   종료 예약', self.power_dialog), ('♡   친구 추천', self.community_dialog),
+                             ('↻   자동 다운로드', self.automation_dialog),('◷   종료 예약', self.power_dialog), ('♡   친구 추천', self.community_dialog),
                              ('↗   사이트·최신 링크', self.sites_dialog), ('⚙   세부 설정', self.settings), ('↗   저장 폴더', self.open_folder)]:
             b = button(text, action)
             b.setObjectName('nav')
@@ -350,7 +353,11 @@ class Window(QMainWindow):
         row.addWidget(label('~'))
         row.addWidget(self.end)
         pl.addLayout(row)
-        rule = label('작품명 / 1화 / 원본파일명\n완료 파일은 검사 후 건너뜁니다.', 'accent')
+        from automation_ui import tail_combo
+        self.latest=tail_combo(self.cfg.get('latest_count',0));pl.addWidget(self.latest)
+        self.latest.currentIndexChanged.connect(self.latest_mode_changed)
+        self.start.setEnabled(not self.latest.currentData());self.end.setEnabled(not self.latest.currentData())
+        rule = label('최신 범위 선택 시 회차 범위 대신 최신부터 받습니다.\n작품명 / 1화 / 원본파일명', 'accent')
         rule.setWordWrap(True)
         pl.addWidget(rule)
         self.start_button = button('선택 작품 다운로드  ↓', self.start_download, True)
@@ -402,6 +409,10 @@ class Window(QMainWindow):
     def persist_settings(self):
         (STATE/'settings.json').write_text(json.dumps(self.cfg,ensure_ascii=False,indent=2),encoding='utf-8')
 
+    def latest_mode_changed(self,index):
+        self.start.setEnabled(not self.latest.currentData());self.end.setEnabled(not self.latest.currentData())
+        self.cfg['latest_count']=self.latest.currentData();self.persist_settings()
+
     def toggle_menu(self):self.set_menu_compact(not self.cfg.get('menu_compact',False))
     def set_menu_compact(self,compact,persist=True):
         self.cfg['menu_compact']=compact;self.sidebar.setFixedWidth(68 if compact else 186)
@@ -443,10 +454,10 @@ class Window(QMainWindow):
         cfg = self.cfg.copy()
         cfg.update(site_url=validate_url(self.url.text()), output_dir=self.path.text().strip(),
                    min_width=self.width.value(), min_height=self.height.value(),
-                   start_episode=self.start.value(), end_episode=self.end.value())
+                   start_episode=self.start.value(), end_episode=self.end.value(),latest_count=self.latest.currentData(),policy_file=str(STATE/'settings.json'))
         if not cfg['output_dir']:
             raise ValueError('저장 폴더를 선택하세요.')
-        if cfg['end_episode'] and cfg['end_episode'] < cfg['start_episode']:
+        if not cfg['latest_count'] and cfg['end_episode'] and cfg['end_episode'] < cfg['start_episode']:
             raise ValueError('마지막 회차는 시작 회차 이상이어야 합니다.')
         cfg['output_dir']=str(Path(cfg['output_dir']).expanduser().resolve())
         cfg['library_roots']=list(dict.fromkeys([cfg['output_dir']]+cfg.get('library_roots',[])))
@@ -689,6 +700,8 @@ class Window(QMainWindow):
                 self.cards[value['url']].set_cover(value['path'])
         elif kind == 'log':
             self.logs.appendPlainText(value)
+        elif kind == 'transfer_wait':
+            self.transfer_waiting=value;self.status.setText('허용 다운로드 시간까지 대기 중 · 중단 가능' if value else '다운로드 진행 중')
         elif kind == 'plan':
             self.progress.setRange(0, max(1, value))
         elif kind == 'current':
@@ -739,6 +752,7 @@ class Window(QMainWindow):
         SettingsCenter(self).exec()
 
     def history(self):
+        if self.auto_job and self.auto_job.isRunning():QMessageBox.information(self,'작업 진행 중','자동 목록 작업을 마친 뒤 보관함을 여세요.');return
         if self.queue_job or (self.job and self.job.isRunning()):
             QMessageBox.information(self,'작업 진행 중','현재 작업이 끝난 뒤 보관함을 여세요.');return
         try:self.read_cfg()
@@ -747,6 +761,8 @@ class Window(QMainWindow):
         LibraryDialog(self).exec()
 
     def closeEvent(self, event):
+        if self.auto_job and self.auto_job.isRunning():
+            self.auto_job.control.stopped.set();self.status.setText('자동 목록 작업 정리 중 · 잠시 후 다시 닫아주세요');event.ignore();return
         if getattr(self,'offline',None) is not None and not self.offline.shutdown():
             self.status.setText('뷰어 작업 정리 중 · 잠시 후 다시 닫아주세요');event.ignore();return
         if self.queue_job:
@@ -763,6 +779,8 @@ class Window(QMainWindow):
         except ValueError:
             pass
         self.power.cancel()
+        self.automation_timer.stop()
+        self.automation_closed=True
         event.accept()
 
     def queue_dialog(self):
@@ -820,12 +838,14 @@ class Window(QMainWindow):
         self.queue_job=None;self.queue_reason=None;self.pause_button.setEnabled(False);self.stop_button.setEnabled(False)
         self.queue_tick()
     def queue_tick(self):
-        if self.queue_running and self.queue_job is None:
+        if self.queue_running and self.queue_job is None and not (self.auto_job and self.auto_job.isRunning()):
             row=self.queue.next()
             if row:
                 self.active_id=row['id'];self.queue_reason=None;self.download_meter.reset()
+                self.transfer_waiting=False
                 self.queue.change(row['id'],'running',attempts=row['attempts']+1)
-                self.queue_job=Job('download',row['cfg'],[Work(**row['work'])]);self.queue_job.event.connect(self.queue_event)
+                cfg=dict(row['cfg'],network_policy=self.cfg.get('network_policy',{}),policy_file=str(STATE/'settings.json'))
+                self.queue_job=Job('download',cfg,[Work(**row['work'])]);self.queue_job.event.connect(self.queue_event)
                 self.queue_job.done.connect(self.queue_done);self.queue_job.finished.connect(self.queue_finished)
                 self.pause_button.setEnabled(True);self.stop_button.setEnabled(True);self.queue_job.start()
             else:
@@ -835,6 +855,9 @@ class Window(QMainWindow):
                 if complete:self.queue_running=False;self.status.setText('대기열 완료 · 보관함에서 실패 항목 확인')
                 else:self.status.setText('대기열 중단·보류 · 재개할 작품을 선택하세요')
                 if complete and self.power.due(True):self.execute_power()
+                if complete:
+                    with self.auto_store.db() as db:db.execute("DELETE FROM settings WHERE key='cleanup_stamp'")
+                    self.auto_last_check=0;QTimer.singleShot(1000,self.automation_tick)
         if self.power.spec.get('trigger')!='complete' and self.power.due(False):self.execute_power()
         if self.power.issued:
             import time
@@ -894,6 +917,7 @@ class Window(QMainWindow):
         self.content_stack.setCurrentWidget(self.download_page);self.set_page_nav(False);self.compact_download.setEnabled(True)
         self.apply_view_preferences()
     def show_offline(self):
+        if self.auto_job and self.auto_job.isRunning() and getattr(self,'auto_action','')=='cleanup':QMessageBox.information(self,'자동 정리 중','정리가 끝난 뒤 라이브러리를 여세요.');return
         self.compact_download.setEnabled(False)
         from reading_ui import OfflineLibrary
         if getattr(self,'offline',None) is None:
@@ -914,9 +938,9 @@ class Window(QMainWindow):
         from download_metrics import duration
         from library import size_text
         active=self.queue_job or (self.job if self.job and self.job.kind=='download' else None)
-        self.download_meter.pause(bool(active and active.control.paused.is_set()))
+        self.download_meter.pause(bool(active and (active.control.paused.is_set() or getattr(self,'transfer_waiting',False))))
         value=self.download_meter.snapshot()
-        if active:self.speed_label.setText('일시정지 · 예상 시간 대기' if value['paused'] else f"실효 속도 {size_text(value['speed'])}/초\n현재 작품 예상 남은 시간 {duration(value['remaining'])}")
+        if active:self.speed_label.setText('허용 다운로드 시간까지 대기' if getattr(self,'transfer_waiting',False) else '일시정지 · 예상 시간 대기' if value['paused'] else f"실효 속도 {size_text(value['speed'])}/초\n현재 작품 예상 남은 시간 {duration(value['remaining'])}")
         else:self.speed_label.setText('속도 — · 다운로드 대기 중')
 
     def set_view_preference(self,key,value):
@@ -924,6 +948,84 @@ class Window(QMainWindow):
             if value and not QColor(value).isValid():raise ValueError('배경색을 확인하세요.')
             value=QColor(value).name() if value else ''
         self.cfg[key]=value;self.persist_settings();self.apply_view_preferences()
+
+    def automation_dialog(self):
+        from automation_ui import AutomationDialog
+        AutomationDialog(self).exec()
+
+    def cleanup_busy(self):
+        pane=getattr(self,'offline',None)
+        if self.queue_job or (self.job and self.job.isRunning()) or (pane and pane.stack.currentIndex()==1):return True
+        return any(w.__class__.__name__=='LibraryDialog' and w.isVisible() for w in QApplication.topLevelWidgets())
+
+    def automation_action(self,action,scope='selected'):
+        if self.auto_job and self.auto_job.isRunning():return
+        if action=='cleanup' and self.cleanup_busy():self.auto_notice='뷰어·다운로드·내보내기 사용 중 · 자동 정리 보류';return
+        try:cfg=self.read_cfg()
+        except ValueError as e:self.auto_notice=str(e);return
+        from library_ui import LibraryTask
+        from automation_store import enqueue_occurrences,local_now
+        from retention import plan_cleanup,apply_cleanup
+        from core import Work
+        store=self.auto_store;queue=self.queue;root=Path(cfg['output_dir']);entries=store.chosen(scope)
+        self.auto_action=action
+        def operation(control,emit):
+            if action=='due':return ('queue',enqueue_occurrences(store,queue,cfg))
+            if action=='enqueue':
+                ids=[];slot='manual:'+local_now().isoformat()
+                for item in store.payload(cfg,scope,slot):control.check();ids+=queue.add([Work(**item['work'])],item['cfg'])
+                store.log(f'수동 업데이트 · {len(ids)}개 대기열 등록');return ('queue',ids)
+            plan=plan_cleanup(root,entries)
+            if action=='preview':return ('preview',plan)
+            # External readers may keep image files open even after leaving the library.
+            if os.name=='nt':
+                import subprocess
+                active=subprocess.run(['powershell','-NoProfile','-Command','@(Get-Process OpenComic -ErrorAction SilentlyContinue).Count'],capture_output=True,text=True,creationflags=subprocess.CREATE_NO_WINDOW,timeout=15)
+                if active.returncode or active.stdout.strip()!='0':return ('held','OpenComic 사용 중 · 정리 보류')
+            result=apply_cleanup(root,plan,control,emit) if plan else dict(deleted=0,bytes=0,errors=[])
+            from library import size_text
+            text=f"자동 정리 · 이미지 {result['deleted']}개 · {size_text(result['bytes'])} · 보존/오류 {len(result['errors'])}건"
+            store.log(text+('\n'+'\n'.join(result['errors'][:20]) if result['errors'] else ''))
+            with store.db() as db:db.execute("INSERT OR REPLACE INTO settings VALUES('cleanup_stamp',?)",(local_now().strftime('%Y-%m-%d %H'),))
+            return ('cleaned',text)
+        self.auto_job=LibraryTask(operation);self.auto_job.event.connect(lambda k,v:self.logs.appendPlainText(str(v)) if k=='log' else None)
+        def done(state,result):
+            if state!='success':
+                self.auto_notice='자동 목록 처리 '+('중단' if state=='cancelled' else '실패 · '+str(result));store.log(self.auto_notice,'failed');return
+            kind,data=result
+            if kind=='queue':
+                self.batch_ids.update(data)
+                if data:self.queue_running=True
+                self.auto_notice=f'자동 목록 · {len(data)}개 작품 대기열 등록'
+            elif kind=='preview':
+                from library import size_text
+                parent=QApplication.activeModalWidget() or self
+                dialog=QDialog(parent);dialog.setWindowTitle('자동 정리 대상 · 미리보기');dialog.resize(750,500);layout=QVBoxLayout(dialog)
+                layout.addWidget(QLabel(f"{len(data)}회차 · 기록 용량 {size_text(sum(e['bytes'] for e in data))} · 이 화면에서는 삭제하지 않습니다."))
+                box=QPlainTextEdit();box.setReadOnly(True);box.setPlainText('\n'.join(e['title']+' / '+e['episode']+' / '+size_text(e['bytes']) for e in data) or '정리할 회차가 없습니다.');layout.addWidget(box);layout.addWidget(button('닫기',dialog.accept));dialog.setAttribute(Qt.WA_DeleteOnClose);dialog.show();self.auto_preview=dialog
+            else:self.auto_notice=str(data)
+            self.logs.appendPlainText(self.auto_notice)
+        self.auto_job.done.connect(done);self.auto_job.finished.connect(self.queue_tick);self.auto_job.start()
+
+    def automation_tick(self):
+        import time
+        from automation_store import local_now,minute
+        if self.automation_closed:return
+        if self.power.issued:return
+        if time.monotonic()-self.auto_last_check<30 or (self.auto_job and self.auto_job.isRunning()):return
+        if self.update_job and self.update_job.isRunning():return
+        if any(w.__class__.__name__=='UpdatesDialog' and w.isVisible() for w in QApplication.topLevelWidgets()):return
+        self.auto_last_check=time.monotonic();schedule=self.auto_store.schedule()
+        # Prepared occurrences are recovered even after an interrupted registration.
+        with self.auto_store.db() as db:
+            prepared=db.execute("SELECT 1 FROM runs WHERE status='prepared' LIMIT 1").fetchone();stamp=db.execute("SELECT value FROM settings WHERE key='cleanup_stamp'").fetchone()
+        now=local_now()
+        target=now.replace(hour=minute(schedule['time'])//60,minute=minute(schedule['time'])%60,second=0,microsecond=0)
+        with self.auto_store.db() as db:claimed=db.execute('SELECT 1 FROM runs WHERE slot=?',(target.isoformat(),)).fetchone()
+        if prepared or (not claimed and schedule['enabled'] and now.weekday() in schedule['days'] and now>=target and schedule.get('activated','')<=target.isoformat()):
+            self.automation_action('due',schedule['scope']);return
+        if schedule.get('cleanup') and not self.cleanup_busy() and (not stamp or stamp[0]!=now.strftime('%Y-%m-%d %H')):
+            self.automation_action('cleanup',schedule['scope'])
 
     def apply_view_preferences(self):
         pane=getattr(self,'offline',None)

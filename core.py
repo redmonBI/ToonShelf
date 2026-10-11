@@ -198,6 +198,8 @@ class Archive:
 class Browser:
     def __init__(self, cfg: dict, control, emit):
         self.cfg, self.control, self.emit = cfg, control, emit
+        from transfer_policy import TransferPolicy
+        self.policy=TransferPolicy(cfg if cfg.get('_download_job') else {})
 
     def __enter__(self):
         from playwright.sync_api import sync_playwright
@@ -220,6 +222,8 @@ class Browser:
         self.user_agent = self.page.evaluate('navigator.userAgent')
         self.page.on('response', self.capture_image_response)
         self.page.on('popup', lambda p: p.close())
+        if self.cfg.get('_download_job'):
+            self.ctx.route('**/*',lambda route:route.abort() if route.request.resource_type=='image' and self.capture_images and self.policy.managed() else route.continue_())
         return self
 
     def capture_image_response(self, response):
@@ -251,6 +255,7 @@ class Browser:
 
     def visit(self, url: str, selector: str):
         self.control.check()
+        self.policy.gate(self.control,self.emit)
         self.capture_images = False
         self.image_cache.clear()
         self.image_cache_bytes = 0
@@ -278,6 +283,7 @@ class Browser:
 
     def fetch(self, url: str, referer: str):
         self.control.check()
+        self.policy.gate(self.control,self.emit)
         if re.search(r'https?://', urlsplit(url).path, re.I):
             raise ValueError('사이트 이미지 주소가 잘못되었습니다 (경로에 중복 URL).')
         cached = self.image_cache.pop(url, None)
@@ -298,6 +304,9 @@ class Browser:
         for attempt in range(3):
             self.control.check()
             try:
+                if self.policy.managed():
+                    from transfer_policy import stream_image
+                    return stream_image(url,headers,self.ctx.cookies([url]),self.policy,self.control,self.emit)
                 response = self.ctx.request.get(url, headers=headers, timeout=30000)
                 if response.status in (401, 403):
                     self.emit('log', f'이미지 응답 {response.status}: {url}')
@@ -405,6 +414,8 @@ class Control:
 
 def download(cfg, works, control, emit):
     from library import LibraryArchive
+    from automation_store import select_episodes
+    cfg=dict(cfg,_download_job=True)
     archive = LibraryArchive(Path(cfg['output_dir']))
     totals = {'saved': 0, 'skipped': 0, 'filtered': 0, 'failed': 0, 'episodes': 0}
     processed_images=0;seen_images=0
@@ -419,8 +430,7 @@ def download(cfg, works, control, emit):
                 archive.record_work(work)
                 for sequence, episode in enumerate(episodes, 1):
                     archive.record_episode(work, episode, sequence)
-                start, end = cfg.get('start_episode', 1), cfg.get('end_episode', 0)
-                episodes = [e for e in episodes if e.number < 0 or (e.number >= start and (not end or e.number <= end))]
+                episodes = select_episodes(episodes,cfg)
                 plans += [(work, e) for e in episodes]
             emit('plan', len(plans))
             for index, (work, episode) in enumerate(plans):

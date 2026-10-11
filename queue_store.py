@@ -36,13 +36,15 @@ class QueueStore:
         for k in ['work','cfg','progress','result']:r[k]=json.loads(r[k])
         return r
     def add(self,works,cfg):
-        cfg={k:v for k,v in cfg.items() if k in ['site_url','output_dir','min_width','min_height','start_episode','end_episode','delay','visible_browser','image_selector']}
+        cfg={k:v for k,v in cfg.items() if k in ['site_url','output_dir','min_width','min_height','start_episode','end_episode','delay','visible_browser','image_selector','latest_count','automation_run','automation_key','network_policy','policy_file']}
         added=[];known=self.rows()
         with self.session() as db:
             for work in works:
                 value=asdict(work)
+                if cfg.get('automation_run') and any(r['work']['url']==work.url and r['cfg'].get('automation_run')==cfg['automation_run'] for r in known):continue
                 duplicate=any(r['work']['url']==work.url and r['cfg']['output_dir']==cfg['output_dir'] and
                     r['cfg'].get('start_episode')==cfg.get('start_episode') and r['cfg'].get('end_episode')==cfg.get('end_episode')
+                    and r['cfg'].get('latest_count',0)==cfg.get('latest_count',0)
                     and r['status'] in ['pending','running','paused','held','stopped'] for r in known)
                 if duplicate:continue
                 cur=db.execute('INSERT INTO jobs(work,cfg,status,created,updated) VALUES(?,?,\'pending\',?,?)',
