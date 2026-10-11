@@ -5,6 +5,7 @@ import json
 import re
 import sqlite3
 import threading
+_ARCHIVE_INIT_LOCK=threading.Lock()
 import time
 from collections import OrderedDict
 from dataclasses import asdict, dataclass
@@ -416,7 +417,8 @@ def download(cfg, works, control, emit):
     from library import LibraryArchive
     from automation_store import select_episodes
     cfg=dict(cfg,_download_job=True)
-    archive = LibraryArchive(Path(cfg['output_dir']))
+    # Serialize schema creation/migration; independent works can then stream in parallel.
+    with _ARCHIVE_INIT_LOCK:archive = LibraryArchive(Path(cfg['output_dir']))
     totals = {'saved': 0, 'skipped': 0, 'filtered': 0, 'failed': 0, 'episodes': 0}
     processed_images=0;seen_images=0
     try:
@@ -496,6 +498,8 @@ def download(cfg, works, control, emit):
                     archive.episode_status(work, episode, 'failed', str(exc))
                     emit('log', f'{episode.folder} 실패: {exc}')
                 totals['episodes'] += 1
+                if not errors and (episode.number>=totals.get('latest_episode_number',-1)):
+                    totals['latest_episode_number']=episode.number;totals['latest_episode']=episode.folder
                 archive.manifest(archive.work_key(work))
                 emit('progress', {'value': index+1, 'total': len(plans), **totals})
                 emit('log', f'{work.title} / {episode.folder}: 신규 {episode_saved}장' + (f' · 오류 {len(errors)}건' if errors else ''))

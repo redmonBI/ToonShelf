@@ -22,6 +22,7 @@ class AutoStore:
         self.path=Path(path);self.path.parent.mkdir(parents=True,exist_ok=True)
         with self.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS entries(key TEXT PRIMARY KEY,work TEXT,category TEXT,selected INT,tail INT,keep_count INT,delete_days INT)')
+            if 'weekday' not in [r[1] for r in db.execute('PRAGMA table_info(entries)')]:db.execute('ALTER TABLE entries ADD COLUMN weekday INT NOT NULL DEFAULT -1')
             db.execute('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)')
             db.execute('CREATE TABLE IF NOT EXISTS runs(slot TEXT PRIMARY KEY,payload TEXT,status TEXT,detail TEXT,created TEXT)')
     @contextmanager
@@ -40,10 +41,11 @@ class AutoStore:
                 value=asdict(work) if not isinstance(work,dict) else work
                 from core import Work
                 value={k:v for k,v in value.items() if k in Work.__dataclass_fields__}
-                db.execute('INSERT INTO entries VALUES(?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET work=excluded.work',
+                db.execute('INSERT INTO entries(key,work,category,selected,tail,keep_count,delete_days) VALUES(?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET work=excluded.work',
                     (urlsplit(value['url']).path,json.dumps(value,ensure_ascii=False),category,1,10,10,0))
     def update(self,key,**values):
-        if not values or not set(values)<={'category','selected','tail','keep_count','delete_days'}:raise ValueError('설정 항목을 확인하세요.')
+        if not values or not set(values)<={'category','selected','tail','keep_count','delete_days','weekday'}:raise ValueError('설정 항목을 확인하세요.')
+        if 'weekday' in values and int(values['weekday']) not in range(-1,7):raise ValueError('요일을 확인하세요.')
         if 'category' in values and values['category'] not in CATEGORIES:raise ValueError('작품 분류를 확인하세요.')
         for field in ('tail','keep_count','delete_days'):
             if field in values and not 0<=int(values[field])<=10000:raise ValueError('회차·기간 값을 확인하세요.')
@@ -65,17 +67,32 @@ class AutoStore:
         now=(now or local_now()).astimezone(SEOUL);schedule=self.schedule()
         target=now.replace(hour=minute(schedule['time'])//60,minute=minute(schedule['time'])%60,second=0,microsecond=0)
         if schedule['enabled'] and now.weekday() in schedule['days'] and now>=target and schedule.get('activated','')<=target.isoformat():
-            slot=target.isoformat();payload=self.payload(cfg,schedule['scope'],slot)
+            slot=target.isoformat();payload=self.payload(cfg,schedule['scope'],slot,weekday=now.weekday())
             with self.db() as db:db.execute("INSERT OR IGNORE INTO runs VALUES(?,?,'prepared','',?)",(slot,json.dumps(payload,ensure_ascii=False),now.isoformat()))
         with self.db() as db:rows=db.execute("SELECT slot,payload FROM runs WHERE status='prepared' ORDER BY slot").fetchall()
         return [dict(slot=r['slot'],payload=json.loads(r['payload'])) for r in rows]
-    def payload(self,cfg,scope,slot):
+    def payload(self,cfg,scope,slot,weekday=None):
         base=urlsplit(cfg['site_url']);items=[]
         for e in self.chosen(scope):
+            if weekday is not None and e.get('weekday',-1) not in (-1,weekday):continue
             work=dict(e['work']);old=urlsplit(work['url']);work['url']=urlunsplit((base.scheme,base.netloc,old.path,old.query,''))
             options=dict(cfg,start_episode=1,end_episode=0,latest_count=e['tail'],automation_run=slot,automation_key=e['key'])
             items.append(dict(work=work,cfg=options))
         return items
+    def export_data(self):return dict(entries=self.entries(),schedule=self.schedule())
+    def import_data(self,data):
+        entries=data.get('entries',[])
+        # Validate a snapshot before altering the local list.
+        for e in entries:
+            if e.get('category','watching') not in CATEGORIES or int(e.get('weekday',-1)) not in range(-1,7):raise ValueError('자동 목록 동기화 값을 확인하세요.')
+            for k in ('tail','keep_count','delete_days'):
+                if not 0<=int(e.get(k,0))<=10000:raise ValueError('자동 목록 회차 값을 확인하세요.')
+            if not e['work'].get('url'):raise ValueError('작품 주소가 없습니다.')
+        with self.db() as db:
+            db.execute('DELETE FROM entries')
+            for e in entries:db.execute('INSERT INTO entries(key,work,category,selected,tail,keep_count,delete_days,weekday) VALUES(?,?,?,?,?,?,?,?)',(urlsplit(e['work']['url']).path,json.dumps(e['work'],ensure_ascii=False),e.get('category','watching'),int(bool(e.get('selected',1))),int(e.get('tail',10)),int(e.get('keep_count',10)),int(e.get('delete_days',0)),int(e.get('weekday',-1))))
+        # Imported destructive cleanup is deliberately not enabled on another PC.
+        if 'schedule' in data:self.save_schedule(dict(data['schedule'],cleanup=False))
     def mark(self,slot,status,detail):
         with self.db() as db:db.execute('UPDATE runs SET status=?,detail=? WHERE slot=?',(status,str(detail),slot))
     def log(self,detail,status='complete'):

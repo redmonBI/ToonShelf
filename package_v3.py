@@ -5,7 +5,7 @@ from pathlib import Path
 from zipfile import ZipFile,ZIP_DEFLATED
 from sharing import VERSION
 
-root=Path(__file__).resolve().parent;release=root/('portable_final' if '--final' in sys.argv else 'portable')/'ToonShelf'
+root=Path(__file__).resolve().parent;release=root/(sys.argv[sys.argv.index('--release-dir')+1] if '--release-dir' in sys.argv else 'portable_final' if '--final' in sys.argv else 'portable')/'ToonShelf'
 state=release/'state';state.mkdir(exist_ok=True)
 # Export only clean defaults, never credentials, downloaded works or personal paths.
 (state/'settings.json').write_text(json.dumps({'site_url':'https://blacktoon423.com','community_repo':'redmonBI/ToonShelf',
@@ -22,6 +22,8 @@ with ZipFile(target,'w',ZIP_DEFLATED,compresslevel=6) as z:
         if p.is_file():z.write(p,Path('ToonShelf')/p.relative_to(root))
     for p in root.glob('*.py'):
         if not p.name.startswith(('capture_','validate_','diagnose_')):z.write(p,Path('ToonShelf')/'Source'/p.name)
+    for p in (root/'account_server').rglob('*'):
+        if p.is_file() and (p.suffix in ('.py','.sql','.md') or p.name=='Dockerfile'):z.write(p,Path('ToonShelf')/'Source'/p.relative_to(root))
     for name in ['requirements.txt','ToonShelf.spec','install.bat','run.bat']:z.write(root/name,Path('ToonShelf')/'Source'/name)
 with ZipFile(target) as z:assert z.testzip() is None
 sha=hashlib.sha256(target.read_bytes()).hexdigest()

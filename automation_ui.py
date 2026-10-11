@@ -4,6 +4,8 @@ from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QWidg
     QTableWidgetItem,QHeaderView,QAbstractItemView,QProgressBar,QMessageBox)
 from automation_store import CATEGORIES
 from transfer_policy import validate_policy
+from collections_store import DAYS,work_key,filter_works
+from notifications_ui import CollectionFilters
 
 COUNTS=[0,1,5,10,20,30]
 def tail_combo(count):
@@ -23,7 +25,8 @@ class AutomationDialog(QDialog):
         self.tabs=QTabWidget();lay.addWidget(self.tabs,1)
         page=QWidget();p=QVBoxLayout(page);tools=QHBoxLayout();self.filter=QComboBox();self.filter.addItems(['모든 작품']+list(CATEGORIES.values()));self.filter.currentIndexChanged.connect(self.render);self.search=QLineEdit();self.search.setPlaceholderText('자동 목록 안에서 작품 검색');self.search.textChanged.connect(self.render);tools.addWidget(self.filter);tools.addWidget(self.search,1)
         tools.addWidget(button('체크한 사이트 작품 추가',self.add_selected));tools.addWidget(button('읽고 있는 작품 추가',self.add_current));p.addLayout(tools)
-        self.list=table(['예약 체크','작품명','목록 분류','업데이트 범위','남길 최신 회차','보관 기간 (일)']);p.addWidget(self.list,1)
+        self.collection_filters=CollectionFilters(self.render,self);p.addWidget(self.collection_filters)
+        self.list=table(['예약 체크','작품명','목록 분류','업데이트 범위','남길 최신 회차','보관 기간 (일)','작품 요일','즐겨찾기']);p.addWidget(self.list,1)
         for i,width in enumerate([90,250,150,150,160,160]):self.list.setColumnWidth(i,width)
         hint=QLabel('최신 회차는 새로 조회하며 최근 회차부터 받습니다. 0화 보관 / 0일은 해당 삭제 규칙을 사용하지 않습니다.\n삭제 규칙은 자동 정리 설정을 켠 뒤 적용합니다. 최신 N화 보호가 기간 삭제보다 우선합니다. 목록에서 빼도 작품 파일은 남습니다.');hint.setWordWrap(True);p.addWidget(hint)
         row=QHBoxLayout();row.addWidget(button('전체 체크',lambda:self.check_all(True)));row.addWidget(button('전체 체크 해제',lambda:self.check_all(False)));row.addWidget(button('선택 행을 목록에서 빼기',self.remove));row.addStretch();row.addWidget(button('체크한 작품 지금 업데이트',lambda:self.start('selected')));row.addWidget(button('목록 전체 지금 업데이트',lambda:self.start('all')));p.addLayout(row);self.tabs.addTab(page,'작품 목록')
@@ -53,20 +56,42 @@ class AutomationDialog(QDialog):
         if not hasattr(self,'list'):return
         rows=self.store.entries();category=list(CATEGORIES)[self.filter.currentIndex()-1] if self.filter.currentIndex() else None
         self.rows=[e for e in rows if (not category or e['category']==category) and self.search.text().casefold() in e['work']['title'].casefold()];self.list.setRowCount(len(self.rows))
+        collection=getattr(self.host,'collection_store',None)
+        if collection:
+            day=self.collection_filters.day.currentData()
+            filtered=filter_works([e['work'] for e in self.rows],collection,genre=self.collection_filters.genre.text().strip(),publisher=self.collection_filters.publisher.text().strip(),favorite_only=self.collection_filters.favorite.currentIndex()==1,favorite_first=self.collection_filters.favorite.currentIndex()==2)
+            order={work_key(w):i for i,w in enumerate(filtered)}
+            self.rows=[e for e in self.rows if e['key'] in order and (day is None or e.get('weekday',-1)==day)]
+            self.rows.sort(key=lambda e:order[e['key']])
+        self.list.setRowCount(len(self.rows))
         for i,e in enumerate(self.rows):
             c=QCheckBox();c.setChecked(bool(e['selected']));c.toggled.connect(lambda value,k=e['key']:self.store.update(k,selected=int(value)));self.list.setCellWidget(i,0,c);self.list.setItem(i,1,QTableWidgetItem(e['work']['title']))
             c=QComboBox();c.addItems(list(CATEGORIES.values()));c.setCurrentIndex(list(CATEGORIES).index(e['category']));c.currentIndexChanged.connect(lambda index,k=e['key']:self.store.update(k,category=list(CATEGORIES)[index]));self.list.setCellWidget(i,2,c)
             c=tail_combo(e['tail']);c.currentIndexChanged.connect(lambda index,k=e['key'],c=c:self.store.update(k,tail=c.itemData(index)));self.list.setCellWidget(i,3,c)
             for column,field in [(4,'keep_count'),(5,'delete_days')]:
                 spin=QSpinBox();spin.setRange(0,10000);spin.setValue(e[field]);spin.valueChanged.connect(lambda value,k=e['key'],field=field:self.store.update(k,**{field:value}));self.list.setCellWidget(i,column,spin)
+            day=QComboBox();day.addItem('예약 요일 모두',-1)
+            for d,name in enumerate(DAYS):day.addItem(name,d)
+            day.setCurrentIndex(e.get('weekday',-1)+1);day.currentIndexChanged.connect(lambda _,k=e['key'],w=e['work'],c=day:self.set_day(k,w,c.currentData()));self.list.setCellWidget(i,6,day)
+            favorite=QCheckBox('★');favorite.setChecked(bool((collection.get(e['work']) or {}).get('favorite')) if collection else False);favorite.setEnabled(collection is not None)
+            favorite.toggled.connect(lambda v,w=e['work']:self.host.collection_store.update(w,favorite=v));self.list.setCellWidget(i,7,favorite)
+    def set_day(self,key,work,day):
+        self.store.update(key,weekday=day)
+        if getattr(self.host,'collection_store',None):self.host.collection_store.update(work,weekday=day)
     def add_selected(self):
         works=[w for w in self.host.works if w.url in self.host.selected]
         if not works:self.status.setText('사이트 작품 목록에서 추가할 작품을 체크하세요.');return
-        self.store.add(works);self.render();self.status.setText(f'{len(works)}개 작품 추가 · 분류와 업데이트 범위를 설정하세요.')
+        self.store.add(works);self.copy_days(works);self.render();self.status.setText(f'{len(works)}개 작품 추가 · 분류와 업데이트 범위를 설정하세요.')
     def add_current(self):
         pane=getattr(self.host,'offline',None)
         if not pane or not pane.work:self.status.setText('내 작품 라이브러리에서 작품을 먼저 여세요.');return
-        self.store.add([pane.work]);self.render();self.status.setText('읽고 있는 작품을 자동 목록에 추가했습니다.')
+        self.store.add([pane.work]);self.copy_days([pane.work]);self.render();self.status.setText('읽고 있는 작품을 자동 목록에 추가했습니다.')
+    def copy_days(self,works):
+        collection=getattr(self.host,'collection_store',None)
+        if collection:
+            for work in works:
+                metadata=collection.get(work)
+                if metadata:self.store.update(work_key(work),weekday=metadata['weekday'])
     def check_all(self,value):
         for e in self.rows:self.store.update(e['key'],selected=int(value))
         self.render()

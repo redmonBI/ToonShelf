@@ -1,5 +1,5 @@
 """Monotonic wall-clock throughput with explicitly estimated remaining time."""
-import time
+import time,math
 from collections import deque
 
 class DownloadMetrics:
@@ -11,7 +11,10 @@ class DownloadMetrics:
         elif not value and self.paused_at is not None:
             self.pause_time+=self.clock()-self.paused_at;self.paused_at=None;self.samples.clear()
     def record(self,value):
-        self.bytes+=value.get('bytes',0);self.completed=value.get('completed',self.completed);self.total=value.get('total',self.total)
+        def count(raw):
+            try:return max(0,float(raw)) if math.isfinite(float(raw)) else 0
+            except (ValueError,TypeError):return 0
+        self.bytes+=count(value.get('bytes',0));self.completed=count(value.get('completed',self.completed));self.total=count(value.get('total',self.total))
         self.samples.append((self.clock(),self.bytes))
         while len(self.samples)>2 and self.samples[1][0]<self.clock()-15:self.samples.popleft()
     def snapshot(self):
@@ -24,7 +27,7 @@ class DownloadMetrics:
             if len(self.samples)==1:speed=self.bytes/elapsed
         remaining=None
         if self.completed>=3 and self.total>=self.completed:remaining=elapsed/self.completed*(self.total-self.completed)
-        return {'speed':speed,'remaining':remaining,'paused':self.paused_at is not None,'completed':self.completed,'total':self.total}
+        return {'speed':speed,'remaining':remaining,'bytes':self.bytes,'percent':min(100,int(100*self.completed/self.total)) if self.total else None,'paused':self.paused_at is not None,'completed':self.completed,'total':self.total}
 
 def duration(seconds):
     if seconds is None:return '계산 중'

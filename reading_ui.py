@@ -89,6 +89,8 @@ class OfflineLibrary(QWidget):
         self.genre=QComboBox();self.genre.addItem('모든 장르');self.genre.currentTextChanged.connect(self.filter)
         self.sort=QComboBox();self.sort.addItems(['최근 다운로드순','작품 이름순','용량 큰 순']);self.sort.currentIndexChanged.connect(self.filter)
         tools.addWidget(self.search,1);tools.addWidget(self.genre);tools.addWidget(self.sort);sl.addLayout(tools)
+        from notifications_ui import CollectionFilters
+        self.collection_filters=CollectionFilters(self.filter);sl.addWidget(self.collection_filters)
         self.shelf_scroll=QScrollArea();self.shelf_scroll.setWidgetResizable(True);self.grid_widget=QWidget();self.grid=QGridLayout(self.grid_widget);self.grid.setAlignment(Qt.AlignTop);self.shelf_scroll.setWidget(self.grid_widget);sl.addWidget(self.shelf_scroll,1)
         self.pager=Pagination();self.pager.requested.connect(self.go_page);sl.addWidget(self.pager);self.stack.addWidget(shelf)
         reader=QWidget();rl=QVBoxLayout(reader);self.reader_layout=rl;self.reader_bar=QWidget();bar=QHBoxLayout(self.reader_bar);bar.addWidget(btn('‹ 라이브러리',self.back));self.prev=btn('이전 화',lambda:self.move(-1));bar.addWidget(self.prev)
@@ -156,7 +158,8 @@ class OfflineLibrary(QWidget):
         count=max(1,(len(self.filtered())+11)//12);self.page=max(0,min(count-1,index));self.render();self.shelf_scroll.verticalScrollBar().setValue(0)
     def filtered(self):
         rows=[w for w in self.rows if self.search.text().casefold() in w['title'].casefold() and (self.genre.currentIndex()==0 or self.genre.currentText() in w['genre'].replace(',',' ').split())]
-        i=self.sort.currentIndex();rows.sort(key=lambda w:w['title'] if i==1 else w['size'] if i==2 else w['last_downloaded'] or '',reverse=i!=1);return rows
+        i=self.sort.currentIndex();rows.sort(key=lambda w:w['title'] if i==1 else w['size'] if i==2 else w['last_downloaded'] or '',reverse=i!=1)
+        return self.collection_filters.apply(rows,self.host.collection_store) if hasattr(self.host,'collection_store') else rows
     def render(self):
         while self.grid.count():
             item=self.grid.takeAt(0)
@@ -172,6 +175,8 @@ class OfflineLibrary(QWidget):
             cl.addWidget(art);title=QLabel(w['title']);title.setWordWrap(True);title.setStyleSheet('font-size:16px;font-weight:700');cl.addWidget(title)
             meta=QLabel((w['genre'] or '미분류')+' · '+(w['publisher'] or '미분류'));meta.setObjectName('muted');cl.addWidget(meta)
             cl.addWidget(QLabel(f"{w['episodes']}회차 · 기록 용량 {size_text(w['size'])}"));cl.addWidget(btn('계속 읽기  →',lambda checked=False,w=w:self.open_work(w)))
+            if hasattr(self.host,'collection_store'):
+                row=QHBoxLayout();row.addWidget(btn('★ 즐겨찾기' if (self.host.collection_store.get(w) or {}).get('favorite') else '☆ 즐겨찾기',lambda checked=False,w=w:self.host.toggle_favorite(w)));row.addWidget(btn('요일 · 분류',lambda checked=False,w=w:self.host.work_settings(w)));cl.addLayout(row)
             card.setMinimumWidth(180)
             self.grid.addWidget(card,n//3,n%3)
         if not rows:self.grid.addWidget(QLabel('다운로드한 작품이 없습니다. 저장 폴더를 선택하고 다운로드한 뒤 새로고침하세요.'),0,0)

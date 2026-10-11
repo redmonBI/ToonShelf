@@ -19,7 +19,24 @@ def stylesheet(value):
   return s
  result=css('''
  QWidget {background:@bg@;color:@text@;font-family:"Malgun Gothic";font-size:12px;}
- QMainWindow {background:@bg@;}
+ QMainWindow,QDialog,QStackedWidget {background:@bg@;color:@text@;}
+ QAbstractScrollArea,QAbstractScrollArea > QWidget#qt_scrollarea_viewport {background:@bg@;color:@text@;}
+ QTabWidget::pane {background:@panel@;border:1px solid @border@;border-radius:10px;}
+ QTabBar::tab {background:@side@;color:@muted@;padding:10px 14px;border:0;}
+ QTabBar::tab:selected {background:@panel@;color:@accent@;border-bottom:2px solid @accent@;}
+ QScrollBar:vertical {background:@side@;width:12px;border:0;}
+ QScrollBar::handle:vertical {background:@border@;min-height:30px;border-radius:6px;}
+ QScrollBar:horizontal {background:@side@;height:12px;border:0;}
+ QScrollBar::handle:horizontal {background:@border@;min-width:30px;border-radius:6px;}
+ QScrollBar::add-line,QScrollBar::sub-line {height:0;width:0;}
+ QTextEdit,QDateTimeEdit,QTimeEdit {background:@panel@;color:@text@;border:1px solid @border@;border-radius:8px;padding:6px;}
+ QGroupBox {border:1px solid @border@;border-radius:10px;margin-top:12px;padding-top:14px;}
+ QGroupBox::title {color:@muted@;subcontrol-origin:margin;left:12px;}
+ QMenu {background:@panel@;color:@text@;border:1px solid @border@;}
+ QMenu::item:selected {background:@selected@;color:@text@;}
+ QTableView,QListView,QTreeView {background:@panel@;alternate-background-color:@side@;color:@text@;selection-background-color:@selected@;selection-color:@text@;}
+ QAbstractItemView::item:selected:!active {background:@selected@;color:@text@;}
+ QWidget:disabled {color:@muted@;}
  QLabel {background:transparent;}
  QLabel#muted {color:@muted@;}
  QLabel#accent {color:@accent@;}
@@ -44,7 +61,8 @@ def stylesheet(value):
  QCheckBox {background:transparent;spacing:8px;}
  QCheckBox::indicator {width:17px;height:17px;background:@panel@;border:1px solid @border@;border-radius:4px;}
  QCheckBox::indicator:checked {background:@accent@;border:1px solid @accent@;}
- QScrollArea {border:0;background:transparent;}
+ QScrollArea {border:0;background:@bg@;}
+ QScrollArea > QWidget {background:@bg@;}
  QProgressBar {background:@side@;color:@text@;border:0;border-radius:5px;height:10px;text-align:center;}
  QProgressBar::chunk {background:@accent@;border-radius:5px;}
  QPlainTextEdit {background:@panel@;color:@muted@;border:1px solid @border@;border-radius:8px;padding:8px;font-size:11px;}
@@ -67,4 +85,13 @@ def apply(application,value):
   (QPalette.AlternateBase,c['side']),(QPalette.Text,c['text']),(QPalette.Button,c['panel']),
   (QPalette.ButtonText,c['text']),(QPalette.Highlight,c['selected']),(QPalette.HighlightedText,c['text']),
   (QPalette.ToolTipBase,c['panel']),(QPalette.ToolTipText,c['text']),(QPalette.PlaceholderText,c['muted'])]:p.setColor(role,QColor(color))
+ for role in (QPalette.WindowText,QPalette.Text,QPalette.ButtonText,QPalette.PlaceholderText):
+  p.setColor(QPalette.Disabled,role,QColor(c['muted']))
+ p.setColor(QPalette.Disabled,QPalette.Highlight,QColor(c['side']))
+ p.setColor(QPalette.Disabled,QPalette.HighlightedText,QColor(c['muted']))
  application.setPalette(p);application.setStyleSheet(stylesheet(value))
+ # Already created native viewports may retain an explicit old palette.
+ for widget in application.allWidgets():
+  if not widget.property('preserveReaderPalette'):
+   widget.setPalette(p)
+  widget.update()

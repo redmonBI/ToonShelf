@@ -1,5 +1,5 @@
 """Interruptible image streaming and live daily bandwidth/time rules."""
-import json,time
+import json,time,threading,weakref
 from pathlib import Path
 from urllib.request import build_opener,HTTPCookieProcessor,Request
 from urllib.error import HTTPError
@@ -16,9 +16,32 @@ def validate_policy(value):
         if not 0<=rule['mib']<=1024:raise ValueError('시간대별 속도를 확인하세요.')
     return value
 
+class SharedBandwidth:
+    """A process-wide budget shared by all image download workers."""
+    def __init__(self,clock=time.monotonic):
+        self.clock=clock;self.lock=threading.Lock();self.last=clock();self.tokens=0.;self.rate=0.
+    def take(self,amount,rate):
+        with self.lock:
+            now=self.clock()
+            self.tokens=min(65536.,self.tokens+max(0,now-self.last)*self.rate)
+            self.last=now;self.rate=rate
+            taken=min(amount,self.tokens);self.tokens-=taken
+            return taken
+
+_budgets=weakref.WeakValueDictionary()
+_budget_lock=threading.Lock()
+def shared_budget(cfg,clock):
+    # Workers reading the same settings file always share one global limit.
+    scope=str(Path(cfg['policy_file']).resolve()).casefold() if cfg.get('policy_file') else None
+    if not scope:return SharedBandwidth(clock)
+    with _budget_lock:
+        budget=_budgets.get(scope)
+        if budget is None:budget=SharedBandwidth(clock);_budgets[scope]=budget
+        return budget
+
 class TransferPolicy:
     def __init__(self,cfg,clock=time.monotonic,calendar=local_now):
-        self.cfg=cfg;self.clock=clock;self.calendar=calendar;self.last_read=-100.;self.value=cfg.get('network_policy',{});self.deadline=clock();self.waiting=False
+        self.cfg=cfg;self.clock=clock;self.calendar=calendar;self.last_read=-100.;self.value=cfg.get('network_policy',{});self.deadline=clock();self.waiting=False;self.budget=shared_budget(cfg,clock)
     def spec(self):
         if self.clock()-self.last_read>=1:
             self.last_read=self.clock()
@@ -43,11 +66,11 @@ class TransferPolicy:
         self.gate(control,emit);rate=self.limit()
         if not rate:self.deadline=self.clock();return
         remaining=size
-        last=self.clock()
         while remaining>0:
             self.gate(control,emit);rate=self.limit()
             if not rate:break
-            span=min(.1,remaining/rate);control.delay(span);current=self.clock();remaining-=max(0,current-last)*rate;last=current
+            remaining-=self.budget.take(remaining,rate)
+            if remaining>0:control.delay(min(.05,max(.001,remaining/rate)))
 
 def stream_image(url,headers,cookies,policy,control,emit):
     jar=CookieJar()

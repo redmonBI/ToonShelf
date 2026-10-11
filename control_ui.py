@@ -40,7 +40,7 @@ class QueueDialog(QDialog):
         row.addWidget(button('전체 대기열 실행',parent.run_queue));row.addWidget(button('전체 일시정지 / 계속',parent.pause));lay.addLayout(row)
         self.detail=QPlainTextEdit();self.detail.setReadOnly(True);self.detail.setMaximumHeight(150);lay.addWidget(self.detail)
         self.table.itemSelectionChanged.connect(self.show_detail)
-        self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(1500);self.refresh()
+        self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(1500);self.finished.connect(lambda:self.timer.stop());self.refresh()
     def selected(self):
         indexes={i.row() for i in self.table.selectedIndexes()}
         return [self.rows[i]['id'] for i in indexes if i<len(self.rows)]
@@ -168,7 +168,7 @@ class UpdatesDialog(TaskDialog):
     def install(self):
         import sys
         if not getattr(sys,'frozen',False):QMessageBox.information(self,'실행 파일 필요','배포된 ToonShelf.exe에서 자체 업데이트를 사용하세요.');return
-        if self.owner.queue_job or (self.owner.job and self.owner.job.isRunning()) or (self.owner.auto_job and self.owner.auto_job.isRunning()):QMessageBox.information(self,'작업 중','작업을 중단하고 기록을 저장한 뒤 설치하세요.');return
+        if getattr(self.owner,'queue_jobs',{}) or self.owner.queue_job or (self.owner.job and self.owner.job.isRunning()) or (self.owner.auto_job and self.owner.auto_job.isRunning()):QMessageBox.information(self,'작업 중','작업을 중단하고 기록을 저장한 뒤 설치하세요.');return
         n=self.table.currentRow()
         if not hasattr(self,'rows') or not 0<=n<len(self.rows):return
         if version_tuple(self.rows[n]['tag_name'])<=version_tuple(VERSION):
@@ -185,7 +185,7 @@ class UpdatesDialog(TaskDialog):
     def installed(self,ok,result):
         self.busy.hide();self.install_button.setEnabled(True);self.check_button.setEnabled(True)
         if not ok:self.info.setText('패치 준비 실패: '+str(result));return
-        if self.owner.queue_job or (self.owner.job and self.owner.job.isRunning()) or (self.owner.update_job and self.owner.update_job.isRunning()) or (self.owner.auto_job and self.owner.auto_job.isRunning()):
+        if getattr(self.owner,'queue_jobs',{}) or self.owner.queue_job or (self.owner.job and self.owner.job.isRunning()) or (self.owner.update_job and self.owner.update_job.isRunning()) or (self.owner.auto_job and self.owner.auto_job.isRunning()):
             self.info.setText('패치 준비 완료 · 진행 중인 작업을 종료하고 다시 업데이트하세요.');return
         self.info.setText('패치 적용 준비 완료 · 프로그램을 재시작합니다…');self.busy.show();self.install_button.setEnabled(False)
         def apply():

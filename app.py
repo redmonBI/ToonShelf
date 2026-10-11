@@ -163,7 +163,9 @@ class Window(QMainWindow):
         self.queue=QueueStore(STATE/'queue.sqlite3')
         from automation_store import AutoStore
         self.auto_store=AutoStore(STATE/'automation.sqlite3');self.auto_job=None;self.auto_notice='';self.auto_last_check=0;self.automation_closed=False
-        self.queue_job=None;self.queue_running=False;self.queue_reason=None;self.batch_ids=set()
+        self.queue_job=None;self.queue_jobs={};self.queue_metrics={};self.queue_reasons={};self.queue_running=False;self.queue_reason=None;self.batch_ids=set()
+        from collections_store import CollectionStore
+        self.collection_store=CollectionStore(STATE/'collections.sqlite3');self.notification_job=None
         self.power=PowerPlan(STATE/'power_history.jsonl')
         self.community_cache={}
         self.update_job=None;self.update_rows=[];self.latest_release=None
@@ -193,6 +195,9 @@ class Window(QMainWindow):
         self.disk_timer=QTimer(self);self.disk_timer.timeout.connect(self.update_disk);self.disk_timer.start(10000)
         self.update_timer=QTimer(self);self.update_timer.timeout.connect(self.check_updates);self.update_timer.start(6*3600*1000)
         self.automation_timer=QTimer(self);self.automation_timer.timeout.connect(self.automation_tick);self.automation_timer.start(30000)
+        self.notification_timer=QTimer(self);self.notification_timer.timeout.connect(self.check_episode_updates);self.notification_timer.start(30*60*1000)
+        from app_services import AccountCoordinator
+        self.accounts_service=AccountCoordinator(self,STATE)
         if not os.environ.get('TOONSHELF_TESTING') and not any(a.startswith('--') for a in sys.argv[1:]):QTimer.singleShot(2500,self.check_updates)
 
     def build(self):
@@ -205,6 +210,8 @@ class Window(QMainWindow):
         self.compact_download=button('선택 작품 다운로드 ↓',self.start_download,True);toolbar.addWidget(self.compact_download)
         self.rules_toggle=button('저장 규칙 숨기기',self.toggle_rules);toolbar.addWidget(self.rules_toggle)
         toolbar.addWidget(button('⚙ 설정',self.settings));shell.addWidget(self.app_toolbar)
+        self.account_button=button('계정 · 로그인',self.accounts);toolbar.addWidget(self.account_button)
+        self.notification_button=button('새 회차 0',self.notifications);toolbar.addWidget(self.notification_button)
         outer = QHBoxLayout();shell.addLayout(outer,1)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -286,6 +293,8 @@ class Window(QMainWindow):
         taxonomy.addWidget(self.sort_filter);taxonomy.addWidget(button('장르 숨김',self.hide_genres))
         self.show_hidden=QCheckBox('숨긴 장르 보기');self.show_hidden.toggled.connect(self.filter_changed);taxonomy.addWidget(self.show_hidden)
         main.addLayout(taxonomy)
+        from notifications_ui import CollectionFilters
+        self.collection_filters=CollectionFilters(self.filter_changed);main.addWidget(self.collection_filters)
         counts = QHBoxLayout()
         self.count = label('작품 0개', 'muted')
         counts.addWidget(self.count)
@@ -386,6 +395,8 @@ class Window(QMainWindow):
         self.speed_timer=QTimer(self);self.speed_timer.timeout.connect(self.refresh_speed);self.speed_timer.start(1000)
         self.volume = label('저장 용량 0.0 MB', 'muted')
         pr.addWidget(self.volume)
+        pr.addWidget(button('전체 작품 진행 그래프',self.download_dashboard))
+        self.active_downloads=label('진행 중인 작품 없음','muted');self.active_downloads.setWordWrap(True);pr.addWidget(self.active_downloads)
         row = QHBoxLayout()
         self.pause_button = button('일시정지', self.pause)
         self.stop_button = button('중단', self.stop)
@@ -407,7 +418,13 @@ class Window(QMainWindow):
         self.update_disk()
 
     def persist_settings(self):
-        (STATE/'settings.json').write_text(json.dumps(self.cfg,ensure_ascii=False,indent=2),encoding='utf-8')
+        service=getattr(self,'accounts_service',None)
+        if service and service.profile_id:
+            from app_services import SYNC_KEYS
+            folder=STATE/'accounts'/service.profile_id;folder.mkdir(parents=True,exist_ok=True);(folder/'settings.json').write_text(json.dumps(self.cfg,ensure_ascii=False,indent=2),encoding='utf-8')
+            guest_cfg=service.guest[0];value={k:v for k,v in self.cfg.items() if k not in SYNC_KEYS and k!='reading_positions'};value.update({k:v for k,v in guest_cfg.items() if k in SYNC_KEYS or k=='reading_positions'})
+        else:value=self.cfg
+        target=STATE/'settings.json';temp=target.with_suffix('.tmp');temp.write_text(json.dumps(value,ensure_ascii=False,indent=2),encoding='utf-8');temp.replace(target)
 
     def latest_mode_changed(self,index):
         self.start.setEnabled(not self.latest.currentData());self.end.setEnabled(not self.latest.currentData())
@@ -454,7 +471,7 @@ class Window(QMainWindow):
         cfg = self.cfg.copy()
         cfg.update(site_url=validate_url(self.url.text()), output_dir=self.path.text().strip(),
                    min_width=self.width.value(), min_height=self.height.value(),
-                   start_episode=self.start.value(), end_episode=self.end.value(),latest_count=self.latest.currentData(),policy_file=str(STATE/'settings.json'))
+                   start_episode=self.start.value(), end_episode=self.end.value(),latest_count=self.latest.currentData(),policy_file=self.policy_path())
         if not cfg['output_dir']:
             raise ValueError('저장 폴더를 선택하세요.')
         if not cfg['latest_count'] and cfg['end_episode'] and cfg['end_episode'] < cfg['start_episode']:
@@ -464,8 +481,12 @@ class Window(QMainWindow):
         self.cfg.update(cfg)
         self.url.setText(cfg['site_url'])
         cfg=self.cfg
-        (STATE / 'settings.json').write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
+        self.persist_settings()
         return cfg
+
+    def policy_path(self):
+        service=getattr(self,'accounts_service',None)
+        return str(STATE/'accounts'/service.profile_id/'settings.json') if service and service.profile_id else str(STATE/'settings.json')
 
     def launch(self, kind, works=()):
         if self.job and self.job.isRunning():
@@ -561,6 +582,7 @@ class Window(QMainWindow):
             import re
             works.sort(key=lambda w:float(re.search(r'\d+(?:\.\d+)?',w.latest).group()) if re.search(r'\d+(?:\.\d+)?',w.latest) else -1,reverse=True)
         elif mode==4:works.sort(key=lambda w:w.title.casefold())
+        if hasattr(self,'collection_filters'):works=self.collection_filters.apply(works,self.collection_store)
         return works
 
     def filter_changed(self):
@@ -590,6 +612,8 @@ class Window(QMainWindow):
         columns=(5 if self.cfg.get('menu_compact') else 4) if self.cfg.get('rules_hidden') else 3
         for i, work in enumerate(works[self.page_index*24:(self.page_index+1)*24]):
             card = Card(work, work.url in self.selected, self.select, self.episodes)
+            row=QHBoxLayout();favorite=button('★' if (self.collection_store.get(work) or {}).get('favorite') else '☆',lambda checked=False,w=work:self.toggle_favorite(w));favorite.setToolTip('즐겨찾기 추가 / 해제');row.addWidget(favorite)
+            row.addWidget(button('요일 · 분류',lambda checked=False,w=work:self.work_settings(w)));card.layout().addLayout(row)
             self.cards[work.url] = card
             self.grid.addWidget(card, i//columns, i%columns)
         if not works:
@@ -660,10 +684,11 @@ class Window(QMainWindow):
         self.status.setText(f'대기열에 {len(ids)}개 작품 추가');self.run_queue()
 
     def pause(self):
-        if self.queue_job:
-            ctl=self.queue_job.control
-            if ctl.paused.is_set():ctl.paused.clear();self.queue.change(self.active_id,'running');self.pause_button.setText('일시정지')
-            else:ctl.paused.set();self.queue.change(self.active_id,'paused');self.pause_button.setText('계속 받기')
+        if self.queue_jobs:
+            paused=all(job.control.paused.is_set() for job in self.queue_jobs.values())
+            for id,job in self.queue_jobs.items():
+                job.control.paused.clear() if paused else job.control.paused.set();self.queue.change(id,'running' if paused else 'paused')
+            self.pause_button.setText('일시정지' if paused else '계속 받기')
             return
         if self.job:
             if self.job.control.paused.is_set():
@@ -676,8 +701,10 @@ class Window(QMainWindow):
                 self.status.setText('일시정지 · 현재 요청이 끝나면 멈춥니다')
 
     def stop(self):
-        if self.queue_job:
-            self.queue_running=False;self.change_queue(self.active_id,'stopped');return
+        if self.queue_jobs:
+            self.queue_running=False
+            for id in list(self.queue_jobs):self.change_queue(id,'stopped')
+            return
         if self.job:
             self.job.control.stopped.set()
             self.status.setText('중단 요청 · 현재 요청이 끝나면 멈춥니다')
@@ -761,12 +788,15 @@ class Window(QMainWindow):
         LibraryDialog(self).exec()
 
     def closeEvent(self, event):
+        if self.notification_job and self.notification_job.isRunning():self.notification_job.control.stopped.set();self.status.setText('새 회차 확인 정리 중 · 잠시 후 다시 닫아주세요');event.ignore();return
+        if self.accounts_service.busy():self.status.setText('계정 동기화가 끝난 뒤 닫아주세요');event.ignore();return
         if self.auto_job and self.auto_job.isRunning():
             self.auto_job.control.stopped.set();self.status.setText('자동 목록 작업 정리 중 · 잠시 후 다시 닫아주세요');event.ignore();return
         if getattr(self,'offline',None) is not None and not self.offline.shutdown():
             self.status.setText('뷰어 작업 정리 중 · 잠시 후 다시 닫아주세요');event.ignore();return
         if self.queue_job:
-            self.queue_running=False;self.queue_reason='stopped';self.queue_job.control.stopped.set()
+            self.queue_running=False
+            for id in list(self.queue_jobs):self.change_queue(id,'stopped')
             self.status.setText('대기열 기록 저장 중 · 잠시 후 다시 닫아주세요');event.ignore();return
         if self.update_job and self.update_job.isRunning():event.ignore();return
         if self.job and self.job.isRunning():
@@ -780,12 +810,14 @@ class Window(QMainWindow):
             pass
         self.power.cancel()
         self.automation_timer.stop()
+        self.notification_timer.stop()
+        self.speed_timer.stop();self.cover_timer.stop();self.queue_timer.stop();self.disk_timer.stop();self.update_timer.stop()
+        self.accounts_service.stop()
         self.automation_closed=True
         event.accept()
 
     def queue_dialog(self):
-        from control_ui import QueueDialog
-        QueueDialog(self).exec()
+        self.download_dashboard()
     def power_dialog(self):
         from control_ui import PowerDialog
         PowerDialog(self).exec()
@@ -815,40 +847,61 @@ class Window(QMainWindow):
         r=next((r for r in self.queue.rows() if r['id']==id),None)
         if not r:return
         if action=='priority':self.queue.change(id,priority=max([v['priority'] for v in self.queue.rows()]+[0])+1);return
-        if self.queue_job and id==self.active_id:
-            if action=='pending':self.queue_job.control.paused.clear();self.queue.change(id,'running');return
-            self.queue_reason=action;self.queue_job.control.stopped.set();self.queue.change(id,action);return
+        if id in self.queue_jobs:
+            if action=='pending':self.queue_jobs[id].control.paused.clear();self.queue.change(id,'running');return
+            if action=='paused':self.queue_jobs[id].control.paused.set();self.queue.change(id,'paused');return
+            self.queue_reasons[id]=action;self.queue_jobs[id].control.stopped.set();self.queue.change(id,action);return
         if action=='pending':self.queue.change(id,'pending',retry_count=0,error='');self.batch_ids.add(id);self.queue_running=True
         else:self.queue.change(id,action)
-    def queue_event(self,kind,value):
-        r=next(r for r in self.queue.rows() if r['id']==self.active_id)
+    def queue_event(self,kind,value,id=None):
+        id=self.active_id if id is None else id
+        r=next((r for r in self.queue.rows() if r['id']==id),None)
+        if r is None:return
         p=r['progress'];p[kind]=value
-        if kind in ['current','image_progress','progress','saved','transfer_progress']:self.queue.change(self.active_id,progress=p)
-        self.on_event(kind,value)
-    def queue_done(self,kind,result):
-        id=self.active_id;r=next(r for r in self.queue.rows() if r['id']==id)
-        if self.queue_reason:status=self.queue_reason;error='사용자 요청';result={}
-        elif kind=='download':status='partial' if result['failed'] else 'complete';error='';self.on_done(kind,result)
+        if kind in ['plan','current','image_progress','progress','saved','transfer_progress','transfer_wait']:self.queue.change(id,progress=p)
+        meter=self.queue_metrics.get(id)
+        if meter and kind=='transfer_progress' and id!=self.active_id:meter.record(value)
+        if meter and kind=='transfer_wait':meter.pause(bool(value))
+        if id==self.active_id:self.on_event(kind,value)
+        elif kind=='log':self.logs.appendPlainText(r['work']['title']+' · '+str(value))
+    def queue_done(self,kind,result,id=None):
+        id=self.active_id if id is None else id;r=next(r for r in self.queue.rows() if r['id']==id)
+        reason=self.queue_reasons.get(id)
+        if reason:status=reason;error='사용자 요청';result={}
+        elif kind=='download':status='partial' if result['failed'] else 'complete';error='';self.logs.appendPlainText(r['work']['title']+' · 다운로드 처리 완료')
         elif kind=='cancelled':status='stopped';error='중단';result={}
         else:status='failed';error=str(result);result={};self.logs.appendPlainText(error)
         self.queue.change(id,status,result=result,error=error)
+        if kind=='download':self.accounts_service.record_download(r,result,status)
         if status in ['partial','failed'] and self.cfg.get('retry_once') and r['retry_count']<1 and '연속 3개' not in error:
             self.queue.change(id,'pending',retry_count=r['retry_count']+1);self.logs.appendPlainText(r['work']['title']+' · 실패 항목 재시도 1회')
-    def queue_finished(self):
-        self.queue_job=None;self.queue_reason=None;self.pause_button.setEnabled(False);self.stop_button.setEnabled(False)
+    def queue_finished(self,id=None):
+        id=self.active_id if id is None else id;self.queue_jobs.pop(id,None);self.queue_reasons.pop(id,None)
+        self.queue_job=next(iter(self.queue_jobs.values()),None)
+        if self.queue_jobs:self.active_id=next(iter(self.queue_jobs));self.download_meter=self.queue_metrics[self.active_id]
+        self.queue_reason=None;self.pause_button.setEnabled(bool(self.queue_jobs));self.stop_button.setEnabled(bool(self.queue_jobs))
         self.queue_tick()
     def queue_tick(self):
-        if self.queue_running and self.queue_job is None and not (self.auto_job and self.auto_job.isRunning()):
-            row=self.queue.next()
-            if row:
-                self.active_id=row['id'];self.queue_reason=None;self.download_meter.reset()
-                self.transfer_waiting=False
+        if getattr(self,'accounts_dialog_open',False) or self.accounts_service.busy():return
+        if self.queue_running and not (self.auto_job and self.auto_job.isRunning()):
+            from urllib.parse import urlsplit
+            from download_metrics import DownloadMetrics
+            def lease(row):return (str(Path(row['cfg']['output_dir']).resolve()),urlsplit(row['work']['url']).path)
+            capacity=max(1,min(4,int(self.cfg.get('download_concurrency',2))))
+            rows=self.queue.rows();busy={lease(r) for r in rows if r['id'] in self.queue_jobs}
+            candidates=[r for r in rows if r['status']=='pending' and lease(r) not in busy]
+            for row in candidates:
+                if len(self.queue_jobs)>=capacity:break
+                if lease(row) in busy:continue
+                busy.add(lease(row));id=row['id'];self.queue_reasons.pop(id,None)
                 self.queue.change(row['id'],'running',attempts=row['attempts']+1)
-                cfg=dict(row['cfg'],network_policy=self.cfg.get('network_policy',{}),policy_file=str(STATE/'settings.json'))
-                self.queue_job=Job('download',cfg,[Work(**row['work'])]);self.queue_job.event.connect(self.queue_event)
-                self.queue_job.done.connect(self.queue_done);self.queue_job.finished.connect(self.queue_finished)
-                self.pause_button.setEnabled(True);self.stop_button.setEnabled(True);self.queue_job.start()
-            else:
+                cfg=dict(row['cfg'],network_policy=self.cfg.get('network_policy',{}),policy_file=self.policy_path())
+                job=Job('download',cfg,[Work(**row['work'])]);self.queue_jobs[id]=job;self.queue_metrics[id]=DownloadMetrics()
+                job.event.connect(lambda kind,value,id=id:self.queue_event(kind,value,id))
+                job.done.connect(lambda kind,value,id=id:self.queue_done(kind,value,id));job.finished.connect(lambda id=id:self.queue_finished(id))
+                if self.queue_job is None:self.active_id=id;self.queue_job=job;self.download_meter=self.queue_metrics[id];self.transfer_waiting=False
+                self.pause_button.setEnabled(True);self.stop_button.setEnabled(True);job.start()
+            if not self.queue_jobs and not any(r['status']=='pending' for r in self.queue.rows()):
                 rows=[r for r in self.queue.rows() if r['id'] in self.batch_ids]
                 complete=any(r['status'] in ['complete','partial','failed'] for r in rows) and all(r['status'] in ['complete','partial','failed','cancelled'] for r in rows)
                 self.queue_running=False
@@ -866,7 +919,9 @@ class Window(QMainWindow):
             except Exception as e:self.power.cancel();QMessageBox.warning(self,'종료 실패',str(e))
     def execute_power(self):
         try:
-            if self.queue_job:self.queue_running=False;self.queue_reason='stopped';self.queue_job.control.stopped.set()
+            if self.queue_jobs:
+                self.queue_running=False
+                for id in list(self.queue_jobs):self.change_queue(id,'stopped')
             action=self.power.execute()
             if action=='app':
                 self.quit_timer=QTimer(self);self.quit_timer.timeout.connect(self.finish_quit);self.quit_timer.start(500)
@@ -935,6 +990,7 @@ class Window(QMainWindow):
         SettingsCenter(self,1).exec()
 
     def refresh_speed(self):
+        if self.automation_closed:return
         from download_metrics import duration
         from library import size_text
         active=self.queue_job or (self.job if self.job and self.job.kind=='download' else None)
@@ -942,6 +998,14 @@ class Window(QMainWindow):
         value=self.download_meter.snapshot()
         if active:self.speed_label.setText('허용 다운로드 시간까지 대기' if getattr(self,'transfer_waiting',False) else '일시정지 · 예상 시간 대기' if value['paused'] else f"실효 속도 {size_text(value['speed'])}/초\n현재 작품 예상 남은 시간 {duration(value['remaining'])}")
         else:self.speed_label.setText('속도 — · 다운로드 대기 중')
+        if not self.queue_jobs:self.active_downloads.setText('진행 중인 작품 없음');return
+        rows={r['id']:r for r in self.queue.rows()}
+        lines=[]
+        for id,job in self.queue_jobs.items():
+            meter=self.queue_metrics.get(id);row=rows.get(id,{})
+            if meter:
+                meter.pause(job.control.paused.is_set() or bool(row.get('progress',{}).get('transfer_wait')));snapshot=meter.snapshot();percent=snapshot.get('percent');lines.append(row.get('work',{}).get('title','')+f" · {str(percent)+'%' if percent is not None else '준비 중'}")
+        self.active_downloads.setText('\n'.join(lines) or '진행 중인 작품 없음')
 
     def set_view_preference(self,key,value):
         if key=='reader_background':
@@ -952,6 +1016,75 @@ class Window(QMainWindow):
     def automation_dialog(self):
         from automation_ui import AutomationDialog
         AutomationDialog(self).exec()
+
+    def open_network_settings(self):
+        from automation_ui import AutomationDialog
+        dialog=AutomationDialog(self);dialog.tabs.setCurrentIndex(2);dialog.exec()
+
+    def download_dashboard(self):
+        from progress_ui import QueueDashboard
+        QueueDashboard(self).exec()
+
+    def enqueue_works(self,works,cfg=None):
+        cfg=cfg or self.read_cfg();ids=self.queue.add(works,cfg);self.batch_ids.update(ids);self.queue_running=True;self.queue_tick();return ids
+
+    def toggle_favorite(self,work):
+        current=self.collection_store.get(work) or {};self.collection_store.update(work,favorite=not current.get('favorite'));self.render()
+        pane=getattr(self,'offline',None)
+        if pane:pane.render()
+
+    def work_settings(self,work):
+        from notifications_ui import WorkSettingsDialog
+        dialog=WorkSettingsDialog(self,work)
+        if dialog.exec():self.render();self.refresh_taxonomy()
+        pane=getattr(self,'offline',None)
+        if pane:pane.render()
+
+    def notifications(self):
+        from notifications_ui import NotificationsDialog
+        NotificationsDialog(self).exec()
+
+    def refresh_notifications(self):
+        self.notification_button.setText('새 회차 '+str(self.collection_store.unread_count()))
+
+    def check_episode_updates(self):
+        if self.automation_closed or not self.cfg.get('notifications_enabled') or (self.notification_job and self.notification_job.isRunning()):return
+        if self.auto_job and self.auto_job.isRunning():return
+        from collections_store import check_updates
+        from library_ui import LibraryTask
+        try:cfg=self.read_cfg()
+        except ValueError:return
+        store=self.collection_store;automatic=self.auto_store
+        self.notification_job=LibraryTask(lambda c,e:check_updates(store,automatic,cfg,c,e))
+        def done(state,value):
+            self.refresh_notifications()
+            if state=='success' and value['added']:self.status.setText(f"새 회차 {value['added']}개 · 알림에서 확인하세요")
+        self.notification_job.done.connect(done);self.notification_job.start()
+
+    def accounts(self):
+        from account_ui import AccountDialog
+        if self.accounts_service.busy():self.status.setText('계정 동기화 중 · 잠시 후 다시 열어주세요');return
+        AccountDialog(self).exec()
+
+    def account_snapshot(self):return self.accounts_service.snapshot()
+    def account_apply(self,payload):self.accounts_service.apply(payload)
+    def account_signed_out(self):self.accounts_service.signed_out()
+    def account_can_switch(self):self.accounts_service.assert_switchable()
+    def account_import_local(self):self.accounts_service.import_local()
+    def account_set_device(self,label):self.accounts_service.set_device(label)
+    def account_import_works(self,works):
+        from collections_store import as_work
+        known={w.url for w in self.works}
+        for value in works:
+            work=as_work(value);self.collection_store.update(work)
+            if work.url not in known:self.works.append(work);known.add(work.url)
+        self.render();self.refresh_taxonomy();self.status.setText('조회 작품을 목록에 추가했습니다. 체크 후 다운로드할 수 있습니다.')
+    def account_apply_labels(self,labels):
+        keys=['catalog','library','archive','downloads','automatic','power','community','sites','settings','folder']
+        original=getattr(self,'original_sidebar_names',None)
+        if original is None:self.original_sidebar_names=[text for _,text in self.sidebar_buttons];original=self.original_sidebar_names
+        self.sidebar_buttons=[(widget,(original[i].strip()[0]+'   '+labels[keys[i]]) if i<len(keys) and keys[i] in labels else original[i]) for i,(widget,_) in enumerate(self.sidebar_buttons)]
+        self.set_menu_compact(self.cfg.get('menu_compact',False),False)
 
     def cleanup_busy(self):
         pane=getattr(self,'offline',None)
@@ -1010,7 +1143,7 @@ class Window(QMainWindow):
     def automation_tick(self):
         import time
         from automation_store import local_now,minute
-        if self.automation_closed:return
+        if self.automation_closed or getattr(self,'accounts_dialog_open',False) or self.accounts_service.busy():return
         if self.power.issued:return
         if time.monotonic()-self.auto_last_check<30 or (self.auto_job and self.auto_job.isRunning()):return
         if self.update_job and self.update_job.isRunning():return
