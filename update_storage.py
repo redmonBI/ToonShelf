@@ -1,8 +1,15 @@
 """Only program-owned recovery files may be removed; never user media/state."""
-import json,shutil
+import json,shutil,os,stat
 from pathlib import Path
 
 MARKER='_toonshelf_backup.json'
+
+def remove_owned_tree(path):
+    def writable_retry(function,name,error):
+        if not isinstance(error,PermissionError):raise error
+        os.chmod(name,os.stat(name).st_mode | stat.S_IWUSR)
+        function(name)
+    shutil.rmtree(path,onexc=writable_retry)
 def assert_tree(path,stage=False):
     path=Path(path)
     for p in (path,*path.rglob('*')):
@@ -46,11 +53,11 @@ def stage_owned(path,target):
 def previous_path(target):return Path(target).resolve()/'PreviousVersion'
 def clear_previous(target):
     path=previous_path(target)
-    if path.exists():backup_owned(path,target);shutil.rmtree(path)
+    if path.exists():backup_owned(path,target);remove_owned_tree(path)
 def clean_stage(path,target):
     path=Path(path);updates=Path(target).resolve()/'Updates'
     if path.parent.resolve()!=updates or not (path.name=='current' or path.name.startswith('ToonShelf_update_')):raise ValueError('관리되는 패치 폴더만 정리할 수 있습니다.')
-    stage_owned(path,target);shutil.rmtree(path)
+    stage_owned(path,target);remove_owned_tree(path)
 def list_storage(target):
     target=Path(target).resolve();rows=[];prev=previous_path(target)
     candidates=[prev,*((target/'Updates').glob('ToonShelf_update_*'))]

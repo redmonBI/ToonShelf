@@ -56,6 +56,12 @@ class UsabilityTests(unittest.TestCase):
         self.window.works=[Work('Alpha','https://example.com/a'),Work('Beta','https://example.com/b')];d=WorkFinder(self.window,self.window.auto_store.add);d.search.setText('beta');self.assertEqual(d.table.rowCount(),1);d.table.selectRow(0);d.add();self.assertEqual(self.window.auto_store.entries()[0]['work']['title'],'Beta');self.assertFalse(self.window.selected);d.reject()
 
 class UpdateStorageTests(unittest.TestCase):
+    def test_readonly_completed_stage_is_removed(self):
+        import os,stat
+        from update_storage import prepare_slot,cleanup_applied_stages
+        with tempfile.TemporaryDirectory() as tmp:
+            target=Path(tmp);slot=prepare_slot(target/'Updates');(slot/'patch.json').write_text(json.dumps({'target':str(target)}));(slot/'result.json').write_text(json.dumps({'status':'complete','backup':str(target/'PreviousVersion')}));folder=slot/'ready/ToonShelf/_internal/readonly';folder.mkdir(parents=True);file=folder/'module.py';file.write_text('owned');os.chmod(file,stat.S_IREAD);os.chmod(folder,stat.S_IREAD | stat.S_IEXEC)
+            self.assertEqual(cleanup_applied_stages(target),['current']);self.assertFalse(slot.exists())
     def test_previous_slot_reused_and_deletion_preserves_personal_data(self):
         import patch_update as p
         from update_storage import clear_previous,MARKER,list_storage
