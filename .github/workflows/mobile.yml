@@ -1,0 +1,38 @@
+name: Publish mobile app
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test --prefix mobile
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Prepare only static public application files
+        run: |
+          mkdir -p web/mobile/vendor
+          cp mobile/*.html mobile/*.js mobile/*.css mobile/*.webmanifest mobile/icon* web/mobile/
+          cp mobile/vendor/fflate.js mobile/vendor/fflate.LICENSE web/mobile/vendor/
+          touch web/.nojekyll
+          printf '<meta http-equiv="refresh" content="0;url=mobile/">' > web/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
