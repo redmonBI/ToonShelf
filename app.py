@@ -1048,6 +1048,7 @@ class Window(QMainWindow):
         self.notification_button.setText('새 회차 '+str(self.collection_store.unread_count()))
 
     def check_episode_updates(self):
+        if getattr(self,'accounts_dialog_open',False) or self.accounts_service.busy() or any(w.__class__.__name__=='UpdatesDialog' and w.isVisible() for w in QApplication.topLevelWidgets()):return
         if self.automation_closed or not self.cfg.get('notifications_enabled') or (self.notification_job and self.notification_job.isRunning()):return
         if self.auto_job and self.auto_job.isRunning():return
         from collections_store import check_updates

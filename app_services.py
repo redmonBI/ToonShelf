@@ -44,7 +44,7 @@ class AccountCoordinator(QObject):
         if self.busy():return False
         self.job=AccountTask(fn,self);self.job.result.connect(done);self.job.error.connect(lambda text:self.host.status.setText('계정 · '+text));self.job.start();return True
     def restore(self):
-        if getattr(self.host,'automation_closed',False):return
+        if getattr(self.host,'automation_closed',False) or getattr(self.host,'accounts_dialog_open',False):return
         def work():self.client.restore();return dict(snapshot=self.client.pull(),config=self.client.config())
         def done(data):
             try:self.apply(data['snapshot']['payload']);self.host.account_apply_labels(data['config']['payload'].get('menu_labels',{}));self.host.status.setText('자동 로그인 · 계정 목록을 불러왔습니다')
@@ -89,6 +89,8 @@ class AccountCoordinator(QObject):
     @staticmethod
     def hash(value):return hashlib.sha256(json.dumps(value,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
     def sync(self):
+        from PySide6.QtWidgets import QApplication
+        if any(w.__class__.__name__=='UpdatesDialog' and w.isVisible() for w in QApplication.topLevelWidgets()):return
         if getattr(self.host,'accounts_dialog_open',False) or not self.client.user or self.profile_id!=self.client.user['id'] or self.client.revision is None or self.busy():return
         value=self.snapshot();digest=self.hash(value)
         def work():

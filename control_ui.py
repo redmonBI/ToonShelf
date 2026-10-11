@@ -167,6 +167,7 @@ class UpdatesDialog(TaskDialog):
         if hasattr(self,'rows') and 0<=n<len(self.rows):self.notes.setPlainText(self.rows[n].get('body') or '')
     def install(self):
         import sys
+        if (getattr(self.owner,'accounts_service',None) and self.owner.accounts_service.busy()) or (getattr(self.owner,'notification_job',None) and self.owner.notification_job.isRunning()):QMessageBox.information(self,'작업 중','계정·새 회차 확인이 끝난 뒤 설치하세요.');return
         if not getattr(sys,'frozen',False):QMessageBox.information(self,'실행 파일 필요','배포된 ToonShelf.exe에서 자체 업데이트를 사용하세요.');return
         if getattr(self.owner,'queue_jobs',{}) or self.owner.queue_job or (self.owner.job and self.owner.job.isRunning()) or (self.owner.auto_job and self.owner.auto_job.isRunning()):QMessageBox.information(self,'작업 중','작업을 중단하고 기록을 저장한 뒤 설치하세요.');return
         n=self.table.currentRow()
@@ -185,6 +186,7 @@ class UpdatesDialog(TaskDialog):
     def installed(self,ok,result):
         self.busy.hide();self.install_button.setEnabled(True);self.check_button.setEnabled(True)
         if not ok:self.info.setText('패치 준비 실패: '+str(result));return
+        if (getattr(self.owner,'accounts_service',None) and self.owner.accounts_service.busy()) or (getattr(self.owner,'notification_job',None) and self.owner.notification_job.isRunning()):self.info.setText('계정·새 회차 확인이 끝난 뒤 다시 업데이트하세요.');return
         if getattr(self.owner,'queue_jobs',{}) or self.owner.queue_job or (self.owner.job and self.owner.job.isRunning()) or (self.owner.update_job and self.owner.update_job.isRunning()) or (self.owner.auto_job and self.owner.auto_job.isRunning()):
             self.info.setText('패치 준비 완료 · 진행 중인 작업을 종료하고 다시 업데이트하세요.');return
         self.info.setText('패치 적용 준비 완료 · 프로그램을 재시작합니다…');self.busy.show();self.install_button.setEnabled(False)
