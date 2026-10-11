@@ -29,8 +29,9 @@ class AutomationDialog(QDialog):
         page=QWidget();p=QVBoxLayout(page);tools=QHBoxLayout();self.filter=QComboBox();self.filter.addItems(['모든 작품']+list(CATEGORIES.values()));self.filter.currentIndexChanged.connect(self.render);self.search=QLineEdit();self.search.setPlaceholderText('자동 목록 안에서 작품 검색');self.search.textChanged.connect(self.render);tools.addWidget(self.filter);tools.addWidget(self.search,1)
         tools.addWidget(button('작품 검색·추가',self.find_works));tools.addWidget(button('체크한 사이트 작품 추가',self.add_selected));tools.addWidget(button('읽고 있는 작품 추가',self.add_current));p.addLayout(tools)
         p.addWidget(button('친구 추천에 내 웹툰 목록 전체 공유',self.share_list))
+        p.addWidget(button('사이트 정보 검색·매칭 · 제공처 / 요일 / 최근 업로드일',self.match_metadata))
         self.collection_filters=CollectionFilters(self.render,self);p.addWidget(self.collection_filters)
-        self.list=table(['예약 체크','작품명','목록 분류','업데이트 범위','남길 최신 회차','보관 기간 (일)','작품 요일','즐겨찾기']);p.addWidget(self.list,1)
+        self.list=table(['예약 체크','작품명','목록 분류','업데이트 범위','남길 최신 회차','보관 기간 (일)','예약 요일','즐겨찾기','제공처','연재 요일','최근 업로드일','다운로드 상태']);p.addWidget(self.list,1)
         for i,width in enumerate([90,250,150,150,160,160]):self.list.setColumnWidth(i,width)
         hint=QLabel('최신 회차는 새로 조회하며 최근 회차부터 받습니다. 0화 보관 / 0일은 해당 삭제 규칙을 사용하지 않습니다.\n삭제 규칙은 자동 정리 설정을 켠 뒤 적용합니다. 최신 N화 보호가 기간 삭제보다 우선합니다. 목록에서 빼도 작품 파일은 남습니다.');hint.setWordWrap(True);p.addWidget(hint)
         row=QHBoxLayout();row.addWidget(button('전체 체크',lambda:self.check_all(True)));row.addWidget(button('전체 체크 해제',lambda:self.check_all(False)));row.addWidget(button('선택 행을 목록에서 빼기',self.remove));row.addStretch();row.addWidget(button('체크한 작품 지금 업데이트',lambda:self.start('selected')));row.addWidget(button('목록 전체 지금 업데이트',lambda:self.start('all')));p.addLayout(row);self.tabs.addTab(page,'작품 목록')
@@ -55,17 +56,32 @@ class AutomationDialog(QDialog):
         hint=QLabel('0 = 제한 없음 · 1~1024 MB/s (1 GB/s) · 1 MB = 1,048,576바이트\n속도는 작품 이미지 전송 기준이며 페이지·표지 조회는 제외합니다.\n시간대가 겹치면 더 낮은 제한을 적용합니다. 시작 = 종료는 하루 전체입니다.\n허용 시간이 끝나면 다음 요청·이미지 조각부터 대기하고, 다음 시간에 이어갑니다.\n저장 후 진행 중 다운로드에도 적용합니다. 서버 접근 제한은 우회하지 않습니다.');hint.setWordWrap(True);form.addRow(hint);form.addRow(button('속도·허용 시간 설정 저장',self.save_policy));self.tabs.addTab(page,'속도·진행 시간')
         page=QWidget();p=QVBoxLayout(page);self.history=table(['예약 / 실행 시각','상태','처리 내용']);self.history.setColumnWidth(0,250);self.history.setColumnWidth(1,120);p.addWidget(self.history);p.addWidget(button('실행 기록 새로고침',self.refresh_history));self.tabs.addTab(page,'실행 기록')
         self.status=QLabel();self.status.setWordWrap(True);lay.addWidget(self.status);self.busy=QProgressBar();self.busy.setRange(0,0);self.busy.setFixedHeight(8);lay.addWidget(self.busy);self.busy.hide();lay.addWidget(button('닫기',self.accept),alignment=Qt.AlignRight)
-        self.render();self.refresh_history();self.timer=QTimer(self);self.timer.timeout.connect(self.activity);self.timer.start(500);self.finished.connect(self.timer.stop)
+        self.downloads={};self.render();self.refresh_history();self.timer=QTimer(self);self.timer.timeout.connect(self.activity);self.timer.start(500);self.finished.connect(self.timer.stop);QTimer.singleShot(0,self.load_download_summary)
+    def load_download_summary(self):
+        from library_ui import LibraryTask
+        from download_summary import download_summary
+        root=self.host.path.text();self.summary_task=LibraryTask(lambda c,e:download_summary(root));self.summary_task.setParent(self.host)
+        def done(state,rows):
+            if state=='success':self.downloads=rows
+            if self.isVisible():self.render()
+        self.summary_task.done.connect(done);self.summary_task.start()
     def render(self):
         if not hasattr(self,'list'):return
         rows=self.store.entries();category=list(CATEGORIES)[self.filter.currentIndex()-1] if self.filter.currentIndex() else None
         self.rows=[e for e in rows if (not category or e['category']==category) and self.search.text().casefold() in e['work']['title'].casefold()];self.list.setRowCount(len(self.rows))
         collection=getattr(self.host,'collection_store',None)
         if collection:
-            day=self.collection_filters.day.currentData()
-            filtered=filter_works([e['work'] for e in self.rows],collection,genre=self.collection_filters.genre.text().strip(),publisher=self.collection_filters.publisher.text().strip(),favorite_only=self.collection_filters.favorite.currentIndex()==1,favorite_first=self.collection_filters.favorite.currentIndex()==2)
+            from work_metadata import enrich_work,match_catalog,merged_work,CatalogIndex
+            if getattr(self,'catalog_source',None) is not self.host.works:self.catalog_source=self.host.works;self.catalog_index=CatalogIndex(self.host.works)
+            metadata={e['key']:e for e in collection.entries()}
+            source=[]
+            for e in self.rows:
+                matched,reason=match_catalog(e['work'],self.catalog_index)
+                if matched:e['work']=merged_work(e['work'],matched,reason)
+                source.append(enrich_work(dict(e['work'],last_downloaded=getattr(self,'downloads',{}).get(e['key'],{}).get('last_downloaded','')),metadata.get(e['key']),e))
+            filtered=self.collection_filters.apply(source,collection)
             order={work_key(w):i for i,w in enumerate(filtered)}
-            self.rows=[e for e in self.rows if e['key'] in order and (day is None or e.get('weekday',-1)==day)]
+            self.rows=[e for e in self.rows if e['key'] in order]
             self.rows.sort(key=lambda e:order[e['key']])
         self.list.setRowCount(len(self.rows))
         for i,e in enumerate(self.rows):
@@ -79,6 +95,26 @@ class AutomationDialog(QDialog):
             day.setCurrentIndex(e.get('weekday',-1)+1);day.currentIndexChanged.connect(lambda _,k=e['key'],w=e['work'],c=day:self.set_day(k,w,c.currentData()));self.list.setCellWidget(i,6,day)
             favorite=QCheckBox('★');favorite.setChecked(bool((collection.get(e['work']) or {}).get('favorite')) if collection else False);favorite.setEnabled(collection is not None)
             favorite.toggled.connect(lambda v,w=e['work']:self.host.collection_store.update(w,favorite=v));self.list.setCellWidget(i,7,favorite)
+            from work_metadata import enrich_work
+            value=enrich_work(e['work'],(collection.get(e['work']) or {}) if collection else {},e)
+            days=' · '.join(DAYS[d] for d in value['weekdays']) or '미지정'
+            pane=getattr(self.host,'offline',None);downloaded=getattr(self,'downloads',{}).get(e['key']) or next((w for w in getattr(pane,'rows',[]) if work_key(w)==e['key']),None)
+            state=f"{downloaded['episodes']}회차 보관" if downloaded else '다운로드 예정' if e['selected'] and e['category']!='held' else '다운로드 없음'
+            for column,text in [(8,value.get('publisher') or '미확인'),(9,days),(10,value.get('updated_date') or '미확인'),(11,state)]:self.list.setItem(i,column,QTableWidgetItem(text))
+    def match_metadata(self):
+        if getattr(self,'metadata_task',None) and self.metadata_task.isRunning():return
+        from library_ui import LibraryTask
+        from work_metadata import lookup_metadata
+        try:cfg=self.host.read_cfg()
+        except ValueError as exc:self.status.setText(str(exc));return
+        self.metadata_task=LibraryTask(lambda c,e:lookup_metadata(cfg,[v['work'] for v in self.store.entries()],c,e));self.metadata_task.setParent(self.host);self.busy.show();self.status.setText('사이트 작품 정보 검색 중…')
+        self.metadata_task.event.connect(lambda k,v:self.status.setText(str(v)) if k=='log' and self.isVisible() else None)
+        def done(state,value):
+            if state=='success':
+                self.store.apply_metadata(value['updates']);self.host.collection_store.apply_metadata(value['updates']);self.host.set_catalog(value['catalog'])
+                if self.isVisible():self.render();self.status.setText(f"매칭 {len(value['updates'])}개 · 미매칭 {len(value['unmatched'])}개 · 날짜 조회 오류 {len(value['errors'])}개")
+            elif self.isVisible():self.status.setText('정보 검색 중단' if state=='cancelled' else str(value))
+        self.metadata_task.done.connect(done);self.metadata_task.finished.connect(self.busy.hide);self.finished.connect(lambda _:self.metadata_task.control.stopped.set());self.metadata_task.start()
     def set_day(self,key,work,day):
         self.store.update(key,weekday=day)
         if getattr(self.host,'collection_store',None):self.host.collection_store.update(work,weekday=day)

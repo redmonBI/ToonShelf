@@ -91,9 +91,9 @@ class OfflineLibrary(QWidget):
         tools.addWidget(self.search,1);tools.addWidget(self.genre);tools.addWidget(self.sort);sl.addLayout(tools)
         from notifications_ui import CollectionFilters
         self.collection_filters=CollectionFilters(self.filter);sl.addWidget(self.collection_filters)
-        daytools=QHBoxLayout();self.today=QCheckBox('오늘 요일 자동 검색');self.today.toggled.connect(self.today_changed);daytools.addWidget(self.today);daytools.addWidget(btn('사이트에서 요일 찾기',self.find_weekdays));daytools.addStretch();sl.addLayout(daytools)
+        daytools=QHBoxLayout();self.today=QCheckBox('오늘 요일 자동 검색');self.today.toggled.connect(self.today_changed);daytools.addWidget(self.today);daytools.addWidget(btn('사이트 정보 검색·매칭',self.find_weekdays));daytools.addWidget(btn('검색 중단',self.cancel_lookup));daytools.addWidget(btn('스마트폰·패드 앱',self.mobile_app));daytools.addStretch();sl.addLayout(daytools)
         self.scope_tabs=QTabBar();self.scope_tabs.setExpanding(False)
-        for name in ['전체','내 웹툰 · 최근 회차','전회차 보관','일부 회차']:self.scope_tabs.addTab(name)
+        for name in ['전체','내 웹툰 · 최근 회차','전회차 보관','일부 회차','다운로드 전']:self.scope_tabs.addTab(name)
         self.scope_tabs.currentChanged.connect(self.filter);sl.addWidget(self.scope_tabs)
         scope_hint=QLabel('전회차 보관은 마지막 회차 확인 기준입니다. 요일을 찾지 못한 작품은 미지정으로 표시됩니다.');scope_hint.setObjectName('muted');sl.addWidget(scope_hint)
         self.shelf_scroll=QScrollArea();self.shelf_scroll.setWidgetResizable(True);self.grid_widget=QWidget();self.grid=QGridLayout(self.grid_widget);self.grid.setAlignment(Qt.AlignTop);self.shelf_scroll.setWidget(self.grid_widget);sl.addWidget(self.shelf_scroll,1)
@@ -121,7 +121,7 @@ class OfflineLibrary(QWidget):
         self.apply_preferences(False)
         self.today_timer=QTimer(self);self.today_timer.timeout.connect(self.refresh_today);self.today_timer.start(60000)
         saved=self.host.cfg.get('library_filters',{});self.restoring_filters=True
-        self.scope_tabs.setCurrentIndex(min(3,max(0,int(saved.get('scope',0)))));self.collection_filters.day.setCurrentIndex(max(0,self.collection_filters.day.findData(saved.get('day'))));self.today.setChecked(bool(saved.get('today',False)));self.restoring_filters=False
+        self.scope_tabs.setCurrentIndex(min(4,max(0,int(saved.get('scope',0)))));self.collection_filters.day.set_days(saved.get('days',saved.get('day')));self.today.setChecked(bool(saved.get('today',False)));self.restoring_filters=False
 
     def toggle_focus(self):self.host.set_view_preference('reader_focus',not self.host.cfg.get('reader_focus',False))
     def show_tools(self):
@@ -179,8 +179,9 @@ class OfflineLibrary(QWidget):
         self.root=Path(self.host.path.text()).expanduser().resolve();catalog=list(self.host.works)
         self.run(lambda c,e:shelf_index(self.root,catalog,c,e),self.loaded)
     def loaded(self,rows):
-        self.rows=rows;self.genre.blockSignals(True);self.genre.clear();self.genre.addItems(['모든 장르']+sorted({g for w in rows for g in w['genre'].replace(',',' ').split()}));self.genre.blockSignals(False)
-        self.status.setText(f"{len(rows)}개 작품 · {sum(w['episodes'] for w in rows)}회차 · {size_text(sum(w['size'] for w in rows))}");self.filter()
+        from shelf_collections import enrich_shelf
+        self.rows=rows;source=enrich_shelf(rows,self.host.collection_store.entries(),self.host.auto_store.entries(),self.host.works);self.genre.blockSignals(True);self.genre.clear();self.genre.addItems(['모든 장르']+sorted({g for w in source for g in w['genre'].replace(',',' ').split()}));self.genre.blockSignals(False)
+        self.status.setText(f"{len(source)}개 작품 · {sum(w['episodes'] for w in rows)}회차 · {size_text(sum(w['size'] for w in rows))}"+(' · '+self.match_report if getattr(self,'match_report','') else ''));self.filter()
     def today_changed(self,value):
         self.collection_filters.day.setEnabled(not value);self.refresh_today();self.filter()
     def refresh_today(self):
@@ -188,17 +189,31 @@ class OfflineLibrary(QWidget):
             from automation_store import local_now
             self.collection_filters.day.setCurrentIndex(self.collection_filters.day.findData(local_now().weekday()))
     def find_weekdays(self):
-        from core import Browser
+        from work_metadata import lookup_metadata
+        from collections_store import work_key,as_work
         cfg=dict(self.host.read_cfg(),_download_job=False)
+        tracked={work_key(w):w for w in self.rows};tracked.update({e['key']:e['work'] for e in self.host.auto_store.entries()})
         def operation(control,emit):
-            with Browser(cfg,control,emit) as browser:return browser.catalog()
-        def found(works):
-            self.host.set_catalog([vars(w) for w in works]);self.pending_catalog_refresh=True
+            value=lookup_metadata(cfg,list(tracked.values()),control,emit)
+            if (self.root/'.toonshelf.sqlite3').is_file():
+                from library import LibraryArchive
+                archive=LibraryArchive(self.root)
+                try:archive.seed_catalog([as_work(w) for w in value['updates']])
+                finally:archive.close()
+            return value
+        def found(value):
+            self.host.set_catalog(value['catalog']);self.host.auto_store.apply_metadata(value['updates']);self.host.collection_store.apply_metadata(value['updates']);self.pending_catalog_refresh=True
+            self.match_report=f"정보 매칭 {len(value['updates'])}개 · 미매칭 {len(value['unmatched'])}개 · 날짜 조회 오류 {len(value['errors'])}개"
         self.run(operation,found)
+    def cancel_lookup(self):
+        if self.task and self.task.isRunning():self.task.control.stopped.set();self.status.setText('검색을 중단하는 중…')
+    def mobile_app(self):
+        from mobile_ui import MobileDialog
+        MobileDialog(self.host).exec()
     def filter(self):
         if getattr(self,'restoring_filters',False):return
         self.page=0;self.render()
-        value=dict(scope=self.scope_tabs.currentIndex(),day=self.collection_filters.day.currentData(),today=self.today.isChecked())
+        value=dict(scope=self.scope_tabs.currentIndex(),days=self.collection_filters.day.currentData(),today=self.today.isChecked())
         if self.host.cfg.get('library_filters')!=value:self.host.cfg['library_filters']=value;self.host.persist_settings()
     def turn_page(self,step):
         self.go_page(self.page+step)
@@ -206,9 +221,11 @@ class OfflineLibrary(QWidget):
         count=max(1,(len(self.filtered())+11)//12);self.page=max(0,min(count-1,index));self.render();self.shelf_scroll.verticalScrollBar().setValue(0)
     def filtered(self):
         from shelf_collections import enrich_shelf
-        source=enrich_shelf(self.rows,self.host.collection_store.entries(),self.host.auto_store.entries())
-        scope=['','recent','full','partial'][self.scope_tabs.currentIndex()]
-        rows=[w for w in source if (not scope or w['storage_scope']==scope) and self.search.text().casefold() in w['title'].casefold() and (self.genre.currentIndex()==0 or self.genre.currentText() in w['genre'].replace(',',' ').split())]
+        from work_metadata import CatalogIndex
+        if getattr(self,'catalog_source',None) is not self.host.works:self.catalog_source=self.host.works;self.catalog_index=CatalogIndex(self.host.works)
+        source=enrich_shelf(self.rows,self.host.collection_store.entries(),self.host.auto_store.entries(),self.catalog_index)
+        scope=['','recent','full','partial','pending'][self.scope_tabs.currentIndex()]
+        rows=[w for w in source if (not scope or w['storage_scope']==scope or scope=='pending' and not w['has_download']) and self.search.text().casefold() in w['title'].casefold() and (self.genre.currentIndex()==0 or self.genre.currentText() in w['genre'].replace(',',' ').split())]
         i=self.sort.currentIndex();rows.sort(key=lambda w:w['title'] if i==1 else w['size'] if i==2 else w['last_downloaded'] or '',reverse=i!=1)
         return self.collection_filters.apply(rows,self.host.collection_store) if hasattr(self.host,'collection_store') else rows
     def render(self):
@@ -226,15 +243,23 @@ class OfflineLibrary(QWidget):
             cl.addWidget(art);title=QLabel(w['title']);title.setWordWrap(True);title.setStyleSheet('font-size:16px;font-weight:700');cl.addWidget(title)
             meta=QLabel((w['genre'] or '미분류')+' · '+(w['publisher'] or '미분류'));meta.setObjectName('muted');cl.addWidget(meta)
             from collections_store import DAYS
-            day=DAYS[w['weekday']] if w['weekday']>=0 else '요일 미지정'
-            cl.addWidget(QLabel(w['storage_label']+' · '+day));cl.addWidget(QLabel(f"{w['episodes']}회차 · 기록 용량 {size_text(w['size'])}"));cl.addWidget(btn('계속 읽기  →',lambda checked=False,w=w:self.open_work(w)))
+            day=' · '.join(DAYS[d] for d in w['weekdays']) or '요일 미지정'
+            cl.addWidget(QLabel(w['storage_label']+' · '+day));cl.addWidget(QLabel('최근 업로드 '+(w.get('updated_date') or '미확인')));cl.addWidget(QLabel(f"{w['episodes']}회차 · 기록 용량 {size_text(w['size'])}"));cl.addWidget(btn('계속 읽기  →' if w['has_download'] else '최신 회차 받기',lambda checked=False,w=w:self.open_work(w) if w['has_download'] else self.download_work(w)))
             if hasattr(self.host,'collection_store'):
                 row=QHBoxLayout();row.addWidget(btn('★ 즐겨찾기' if (self.host.collection_store.get(w) or {}).get('favorite') else '☆ 즐겨찾기',lambda checked=False,w=w:self.host.toggle_favorite(w)));row.addWidget(btn('요일 · 분류',lambda checked=False,w=w:self.host.work_settings(w)));cl.addLayout(row)
             card.setMinimumWidth(180)
             self.grid.addWidget(card,n//3,n%3)
-        if not rows:self.grid.addWidget(QLabel('다운로드한 작품이 없습니다. 저장 폴더를 선택하고 다운로드한 뒤 새로고침하세요.'),0,0)
+        if not rows:self.grid.addWidget(QLabel('조건에 맞는 작품이 없습니다. 내 웹툰 목록에 작품을 추가하거나 검색 조건을 변경하세요.'),0,0)
+    def download_work(self,work):
+        from collections_store import as_work,work_key
+        from urllib.parse import urlsplit,urlunsplit
+        automatic=next((e for e in self.host.auto_store.entries() if e['key']==work_key(work)),{})
+        cfg=dict(self.host.read_cfg(),latest_count=automatic.get('tail',10),start_episode=1,end_episode=0)
+        value=dict(work);base=urlsplit(cfg['site_url']);old=urlsplit(value.get('metadata_url') or value['url']);value['url']=urlunsplit((base.scheme,base.netloc,old.path,old.query,''))
+        self.host.enqueue_works([as_work(value)],cfg);self.status.setText('다운로드 대기열에 추가했습니다.')
     def open_work(self,work):
         if self.task and self.task.isRunning():return
+        if not work.get('chapters'):self.status.setText('다운로드된 회차가 없습니다. 최신 회차 받기를 사용하세요.');return
         self.save_position();self.images=[];self.work=work;self.chapters.blockSignals(True);self.chapters.clear();self.chapters.addItems([e['folder'] for e in work['chapters']]);self.chapters.blockSignals(False)
         self.slim_title.setText(self.slim_title.fontMetrics().elidedText(work['title'],Qt.ElideRight,230));self.slim_title.setToolTip(work['title']);self.slim_chapters.blockSignals(True);self.slim_chapters.clear();self.slim_chapters.addItems([e['folder'] for e in work['chapters']]);self.slim_chapters.blockSignals(False)
         saved=self.host.cfg.get('reading_positions',{}).get(work['key'],{});self.chapter=next((i for i,e in enumerate(work['chapters']) if e['key']==saved.get('chapter')),0)

@@ -50,6 +50,11 @@ class AutoStore:
         for field in ('tail','keep_count','delete_days'):
             if field in values and not 0<=int(values[field])<=10000:raise ValueError('회차·기간 값을 확인하세요.')
         with self.db() as db:db.execute('UPDATE entries SET '+','.join(k+'=?' for k in values)+' WHERE key=?',(*values.values(),key))
+    def apply_metadata(self,works):
+        with self.db() as db:
+            for work in works:
+                value=asdict(work) if not isinstance(work,dict) else work
+                db.execute('UPDATE entries SET work=? WHERE key=?',(json.dumps(value,ensure_ascii=False),urlsplit(value['url']).path))
     def remove(self,key):
         with self.db() as db:db.execute('DELETE FROM entries WHERE key=?',(key,))
     def schedule(self):
@@ -74,7 +79,9 @@ class AutoStore:
     def payload(self,cfg,scope,slot,weekday=None):
         base=urlsplit(cfg['site_url']);items=[]
         for e in self.chosen(scope):
-            if weekday is not None and e.get('weekday',-1) not in (-1,weekday):continue
+            from work_metadata import work_days
+            days=[e['weekday']] if e.get('weekday',-1) in range(7) else work_days(e['work'])
+            if weekday is not None and days and weekday not in days:continue
             work=dict(e['work']);old=urlsplit(work['url']);work['url']=urlunsplit((base.scheme,base.netloc,old.path,old.query,''))
             options=dict(cfg,start_episode=1,end_episode=0,latest_count=e['tail'],automation_run=slot,automation_key=e['key'])
             items.append(dict(work=work,cfg=options))

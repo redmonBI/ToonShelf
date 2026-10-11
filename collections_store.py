@@ -41,6 +41,16 @@ class CollectionStore:
         with self.db() as db:
             db.execute('INSERT INTO collections VALUES(?,?,0,-1,?,?) ON CONFLICT(key) DO UPDATE SET work=excluded.work',(key,json.dumps(w,ensure_ascii=False),w.get('genre',''),w.get('publisher','')))
             if values:db.execute('UPDATE collections SET '+','.join(k+'=?' for k in values)+' WHERE key=?',(*values.values(),key))
+    def apply_metadata(self,works):
+        with self.db() as db:
+            for work in works:
+                value=work_dict(work);key=work_key(value);row=db.execute('SELECT * FROM collections WHERE key=?',(key,)).fetchone()
+                if row:
+                    previous=json.loads(row['work'])
+                    genre=value.get('genre','') if row['genre'] in ('',previous.get('genre','')) else row['genre']
+                    publisher=value.get('publisher','') if row['publisher'] in ('',previous.get('publisher','')) else row['publisher']
+                    db.execute('UPDATE collections SET work=?,genre=?,publisher=? WHERE key=?',(json.dumps(value,ensure_ascii=False),genre,publisher,key))
+                else:db.execute('INSERT INTO collections VALUES(?,?,0,-1,?,?)',(key,json.dumps(value,ensure_ascii=False),value.get('genre',''),value.get('publisher','')))
     def observe(self,work,episodes):
         """The initial successful lookup establishes a quiet baseline; new URL paths alert once."""
         w=work_dict(work);key=work_key(w);items={urlsplit(work_dict(e)['url']).path:work_dict(e) for e in episodes}
@@ -81,13 +91,19 @@ class CollectionStore:
             for b in baselines:db.execute('INSERT OR REPLACE INTO episode_baselines VALUES(?,?,?)',(b['key'],b['identifiers'],b['checked']))
             for n in notices:db.execute('INSERT OR REPLACE INTO notices VALUES(?,?,?,?,?,?)',(n['id'],n['key'],json.dumps(n['work'],ensure_ascii=False),json.dumps(n['episode'],ensure_ascii=False),n['created'],int(bool(n['unread']))))
 
-def filter_works(works,store,weekday=None,genre='',publisher='',favorite_only=False,favorite_first=False,search=''):
+def filter_works(works,store,weekday=None,genre='',publisher='',favorite_only=False,favorite_first=False,search='',start_date='',end_date='',date_field='updated_date'):
     metadata={e['key']:e for e in store.entries()};result=[]
     for work in works:
-        value=work_dict(work);m=metadata.get(work_key(value),{});g=m.get('genre',value.get('genre',''));p=m.get('publisher',value.get('publisher',''));favorite=bool(m.get('favorite'))
-        day=m.get('weekday',-1)
-        if day<0:day=value.get('weekday',-1)
-        if weekday is not None and day!=weekday:continue
+        from work_metadata import enrich_work,extract_date
+        value=work_dict(work);m=metadata.get(work_key(value),{});value=enrich_work(value,m);g=value.get('genre','');p=value.get('publisher','');favorite=bool(m.get('favorite'))
+        days=set(value['weekdays']) or {-1}
+        if weekday is not None:
+            selected=set(weekday) if isinstance(weekday,(list,set,tuple)) else {weekday}
+            if not days.intersection(selected):continue
+        if start_date or end_date:
+            first=extract_date(start_date);last=extract_date(end_date);actual=extract_date(value.get(date_field,''))
+            if (start_date and not first) or (end_date and not last) or (first and last and first>last):continue
+            if not actual or first and actual<first or last and actual>last:continue
         if genre and genre.casefold() not in g.casefold():continue
         if publisher and publisher.casefold()!=p.casefold():continue
         if favorite_only and not favorite:continue

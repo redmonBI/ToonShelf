@@ -56,6 +56,7 @@ class LibraryArchive(Archive):
             except sqlite3.OperationalError:
                 if 'weekday' not in [r['name'] for r in self.db.execute('PRAGMA table_info(works)')]:raise
         self.db.execute('CREATE TABLE IF NOT EXISTS work_inventory(key TEXT PRIMARY KEY,episode_keys TEXT,checked TEXT,latest_count INT)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS site_metadata(key TEXT PRIMARY KEY,payload TEXT)')
         episode_columns = {'work_key': "TEXT DEFAULT ''", 'url': "TEXT DEFAULT ''", 'upload_date': "TEXT DEFAULT ''",
                            'folder': "TEXT DEFAULT ''", 'number': 'REAL DEFAULT -1', 'sequence': 'INT DEFAULT 0',
                            'first_downloaded': "TEXT DEFAULT ''", 'last_downloaded': "TEXT DEFAULT ''",
@@ -111,6 +112,12 @@ class LibraryArchive(Archive):
             cover=CASE WHEN excluded.cover<>'' THEN excluded.cover ELSE works.cover END''',
             (self.work_key(work), work.title, work.url, work.genre, work.publisher, work.cover))
         if work.weekday in range(7):self.db.execute('UPDATE works SET weekday=? WHERE key=?',(work.weekday,self.work_key(work)))
+        prior=self.db.execute('SELECT payload FROM site_metadata WHERE key=?',(self.work_key(work),)).fetchone()
+        extra=json.loads(prior[0]) if prior else {}
+        for field in ('weekdays','updated_date','metadata_checked','metadata_url','metadata_match','thumbnail'):
+            value=getattr(work,field)
+            if value:extra[field]=value
+        self.db.execute('INSERT OR REPLACE INTO site_metadata VALUES(?,?)',(self.work_key(work),json.dumps(extra,ensure_ascii=False)))
         self.db.commit()
 
     def record_episode(self, work, episode, sequence=0):
@@ -173,11 +180,13 @@ class LibraryArchive(Archive):
         rows=[dict(row) for row in self.db.execute('''SELECT w.key,w.title,w.url,w.cover,w.weekday,
             COALESCE(w.genre_override,w.genre) AS genre,COALESCE(w.publisher_override,w.publisher) AS publisher,
             COUNT(DISTINCT i.episode_key) AS episodes,COUNT(i.key) AS images,COALESCE(SUM(i.size),0) AS size,
-            MAX(i.last_downloaded) AS last_downloaded,
+            MAX(i.last_downloaded) AS last_downloaded,MAX(e.upload_date) AS updated_date,
             COALESCE(MIN(e.order_verified),0) AS order_verified
             FROM works w JOIN episodes e ON e.work_key=w.key JOIN images i ON i.episode_key=e.key
             GROUP BY w.key ORDER BY last_downloaded DESC,w.title''')]
         for w in rows:
+            extra=self.db.execute('SELECT payload FROM site_metadata WHERE key=?',(w['key'],)).fetchone()
+            if extra:w.update(json.loads(extra[0]))
             inventory=self.db.execute('SELECT * FROM work_inventory WHERE key=?',(w['key'],)).fetchone()
             known=self.db.execute('SELECT key,sequence FROM episodes WHERE work_key=?',(w['key'],)).fetchall()
             w['expected_episode_keys']=json.loads(inventory['episode_keys']) if inventory else [e['key'] for e in known] if known and all(e['sequence']>0 for e in known) else []
@@ -315,6 +324,9 @@ def export_mobile(root, keys, destination, options, control, emit):
             group.mkdir(parents=True,exist_ok=True)
             prefix=f"{e['sequence']:04d}_{e['folder']}"
             entry={'work':w['title'],'genre':w['genre'],'publisher':w['publisher'],'episode':e['folder'],
+                   'work_key':w['key'],'work_url':w['url'],'episode_key':e['key'],'sequence':e['sequence'],
+                   'weekdays':w.get('weekdays') or ([w['weekday']] if w.get('weekday',-1)>=0 else []),
+                   'updated_date':w.get('updated_date',''),'expected_episode_keys':w.get('expected_episode_keys',[]),
                    'upload_date':e['upload_date'],'first_downloaded':e['first_downloaded'],'images':[]}
             if options.get('format')=='cbz':
                 target=group/(prefix+'.cbz')

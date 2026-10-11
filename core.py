@@ -8,7 +8,7 @@ import threading
 _ARCHIVE_INIT_LOCK=threading.Lock()
 import time
 from collections import OrderedDict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import unquote, urljoin, urlsplit
@@ -44,6 +44,11 @@ class Work:
     cover: str = ''
     publisher: str = ''
     weekday: int = -1
+    weekdays: list[int] = field(default_factory=list)
+    updated_date: str = ''
+    metadata_checked: str = ''
+    metadata_url: str = ''
+    metadata_match: str = ''
 
 
 @dataclass
@@ -81,6 +86,8 @@ def parse_catalog(html: str, base: str) -> list[Work]:
             if len(paragraphs) >= 2:
                 work.genre = paragraphs[0].get_text(' ', strip=True)
                 work.latest = paragraphs[1].get_text(' ', strip=True)
+    from work_metadata import extract_date
+    for w in found.values():w.updated_date=extract_date(w.latest)
     return list(found.values())
 
 
@@ -353,7 +360,7 @@ class Browser:
             day='월화수목금토일'.index(match.group(1)) if match else -1
             current=self.rendered_catalog()
             for work in current:
-                if day>=0:work.weekday=day
+                if day>=0:work.weekday=day;work.weekdays=[day]
             works += current
         # Only explicit pagination links on the current host are followed.
         pending = self.page.locator('.pagination a[href]').evaluate_all('(nodes) => nodes.map(a => a.href)')
@@ -371,6 +378,7 @@ class Browser:
         for work in works:
             previous=unique.get(work.url)
             if previous and work.weekday<0:work.weekday=previous.weekday
+            if previous:work.weekdays=sorted(set(previous.weekdays+work.weekdays))
             unique[work.url]=work
         return list(unique.values())
 
@@ -398,6 +406,8 @@ class Browser:
         self.emit('log', f'현재 탭 작품 {len(values):,}개 확인')
         for value in values:
             value['publisher'] = publisher_name(value.get('publisher', ''))
+            from work_metadata import extract_date
+            value['updated_date']=extract_date(value.get('latest',''))
         return [Work(**w) for w in values]
 
     def episodes(self, work):

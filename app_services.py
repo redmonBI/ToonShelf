@@ -22,7 +22,7 @@ def portable_work(value):
     if not isinstance(value,dict):
         from dataclasses import asdict
         value=asdict(value)
-    return {k:v for k,v in value.items() if k in ('title','url','thumbnail','latest','genre','publisher')}
+    return {k:v for k,v in value.items() if k in ('title','url','thumbnail','latest','genre','publisher','weekday','weekdays','updated_date','metadata_checked','metadata_url','metadata_match')}
 
 def sanitize_snapshot(value):
     if isinstance(value,list):return [sanitize_snapshot(v) for v in value]

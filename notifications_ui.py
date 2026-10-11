@@ -7,15 +7,19 @@ from automation_store import SEOUL
 
 class CollectionFilters(QWidget):
     def __init__(self,changed,parent=None):
-        super().__init__(parent);lay=QHBoxLayout(self);lay.setContentsMargins(0,0,0,0)
-        self.day=QComboBox();self.day.addItem('모든 요일',None);self.day.addItem('요일 미지정',-1)
-        for i,name in enumerate(DAYS):self.day.addItem(name,i)
+        super().__init__(parent);outer=QVBoxLayout(self);outer.setContentsMargins(0,0,0,0)
+        from weekday_checks import WeekdayChecks
+        self.day=WeekdayChecks();outer.addWidget(self.day);lay=QHBoxLayout();outer.addLayout(lay)
         self.genre=QLineEdit();self.genre.setPlaceholderText('장르 필터');self.genre.setMaximumWidth(150)
         self.publisher=QLineEdit();self.publisher.setPlaceholderText('제공처 필터');self.publisher.setMaximumWidth(150)
         self.favorite=QComboBox();self.favorite.addItems(['모든 작품','즐겨찾기만','즐겨찾기 우선'])
-        for widget in (self.day,self.genre,self.publisher,self.favorite):lay.addWidget(widget)
+        self.date_kind=QComboBox();self.date_kind.addItem('최근 업로드일','updated_date');self.date_kind.addItem('최근 다운로드일','last_downloaded')
+        self.date_from=QLineEdit();self.date_from.setPlaceholderText('시작 YYYY-MM-DD');self.date_from.setMaximumWidth(145)
+        self.date_to=QLineEdit();self.date_to.setPlaceholderText('종료 YYYY-MM-DD');self.date_to.setMaximumWidth(145)
+        for widget in (self.genre,self.publisher,self.favorite,self.date_kind,self.date_from,self.date_to):lay.addWidget(widget)
+        lay.addStretch();self.date_kind.currentIndexChanged.connect(changed);self.date_from.textChanged.connect(changed);self.date_to.textChanged.connect(changed)
         self.day.currentIndexChanged.connect(changed);self.favorite.currentIndexChanged.connect(changed);self.genre.textChanged.connect(changed);self.publisher.textChanged.connect(changed)
-    def apply(self,works,store):return filter_works(works,store,weekday=self.day.currentData(),genre=self.genre.text().strip(),publisher=self.publisher.text().strip(),favorite_only=self.favorite.currentIndex()==1,favorite_first=self.favorite.currentIndex()==2)
+    def apply(self,works,store):return filter_works(works,store,weekday=self.day.currentData(),genre=self.genre.text().strip(),publisher=self.publisher.text().strip(),favorite_only=self.favorite.currentIndex()==1,favorite_first=self.favorite.currentIndex()==2,start_date=self.date_from.text().strip(),end_date=self.date_to.text().strip(),date_field=self.date_kind.currentData())
 
 class WorkSettingsDialog(QDialog):
     def __init__(self,host,work):
