@@ -1,5 +1,482 @@
 {
-  "posts": [],
+  "posts": [
+    {
+      "id": "8",
+      "author": "크르냐",
+      "account": "redmonBI",
+      "title": "내 웹툰 목록",
+      "genre": "작품 리스트",
+      "body": "함께 읽고 싶은 내 웹툰 목록을 공유합니다.",
+      "created": "2026-10-11T08:27:58+00:00",
+      "updated": "2026-10-11T08:27:58+00:00",
+      "votes": [],
+      "kind": "work_list",
+      "works": [
+        {
+          "title": "1초",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/2834.html"
+        },
+        {
+          "title": "99강화나무몽둥이",
+          "genre": "스토리  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/11394.html"
+        },
+        {
+          "title": "강철을 먹는 플레이어",
+          "genre": "액션",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/14034.html"
+        },
+        {
+          "title": "강철의 열제 [19세 완전판]",
+          "genre": "판타지",
+          "publisher": "카카오",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/19640.html"
+        },
+        {
+          "title": "검 먹는 소드마스터",
+          "genre": "판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/18991.html"
+        },
+        {
+          "title": "게임 속 바바리안으로 살아남기",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/13353.html"
+        },
+        {
+          "title": "곤륜에 용이 산다",
+          "genre": "무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/20030.html"
+        },
+        {
+          "title": "광마회귀",
+          "genre": "액션  스토리",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/10170.html"
+        },
+        {
+          "title": "괴력 난신",
+          "genre": "무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/15305.html"
+        },
+        {
+          "title": "권왕무적",
+          "genre": "액션  판타지",
+          "publisher": "투믹스",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/415.html"
+        },
+        {
+          "title": "권왕전생",
+          "genre": "판타지",
+          "publisher": "카카오",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/15511.html"
+        },
+        {
+          "title": "권왕환생",
+          "genre": "액션  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/18341.html"
+        },
+        {
+          "title": "귀환했는데 입대 전날이다",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/13197.html"
+        },
+        {
+          "title": "김부장",
+          "genre": "액션  스토리",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/10634.html"
+        },
+        {
+          "title": "나 혼자 만렙 뉴비",
+          "genre": "스토리  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/10169.html"
+        },
+        {
+          "title": "나노마신",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/4614.html"
+        },
+        {
+          "title": "나태 공자, 노력 천재 되다",
+          "genre": "스토리  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/9878.html"
+        },
+        {
+          "title": "디펜스 게임의 폭군이 되었다",
+          "genre": "액션  판타지  드라마",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/11966.html"
+        },
+        {
+          "title": "로그인 무림",
+          "genre": "액션  판타지",
+          "publisher": "카카오",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/4229.html"
+        },
+        {
+          "title": "마도전생기",
+          "genre": "액션  판타지  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/13228.html"
+        },
+        {
+          "title": "마탑의 문제아들",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/18001.html"
+        },
+        {
+          "title": "멸망 이후의 세계",
+          "genre": "액션  스토리  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/11180.html"
+        },
+        {
+          "title": "모든걸 기억하는 천재무사",
+          "genre": "무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/19373.html"
+        },
+        {
+          "title": "무한 레벨업 in 무림",
+          "genre": "무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/14134.html"
+        },
+        {
+          "title": "변경백의 10클래스 망나니",
+          "genre": "소년",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/19356.html"
+        },
+        {
+          "title": "별을 품은 소드마스터",
+          "genre": "판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/14169.html"
+        },
+        {
+          "title": "사시미 한 자루로 아카데미를 씹어먹음",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/16209.html"
+        },
+        {
+          "title": "시한부 천재 암흑기사",
+          "genre": "판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/13489.html"
+        },
+        {
+          "title": "시한부 천재가 살아남는 법",
+          "genre": "액션  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/16459.html"
+        },
+        {
+          "title": "신마 환생",
+          "genre": "액션  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/18710.html"
+        },
+        {
+          "title": "신의 탑",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/856.html"
+        },
+        {
+          "title": "아마도 무적불패",
+          "genre": "개그/코미디",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/17317.html"
+        },
+        {
+          "title": "아수라",
+          "genre": "판타지  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/15799.html"
+        },
+        {
+          "title": "아카데미에서 살아남기",
+          "genre": "판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/14922.html"
+        },
+        {
+          "title": "아카데미의 천재칼잡이",
+          "genre": "판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/13883.html"
+        },
+        {
+          "title": "약 파는 황태자",
+          "genre": "판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/14722.html"
+        },
+        {
+          "title": "양치기 마법사",
+          "genre": "판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/19217.html"
+        },
+        {
+          "title": "오늘만 사는 기사",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/15741.html"
+        },
+        {
+          "title": "왕따가 격투기를 너무 잘함",
+          "genre": "액션  드라마",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/13094.html"
+        },
+        {
+          "title": "왕의 힘으로 회귀한다",
+          "genre": "판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/14472.html"
+        },
+        {
+          "title": "월스트리트 천재의 시한부 투자법",
+          "genre": "드라마",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/20366.html"
+        },
+        {
+          "title": "일타강사 백사부",
+          "genre": "액션  스토리  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/10596.html"
+        },
+        {
+          "title": "전지적 독자 시점",
+          "genre": "판타지  드라마",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/4279.html"
+        },
+        {
+          "title": "전직지존",
+          "genre": "무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/20081.html"
+        },
+        {
+          "title": "절대검감",
+          "genre": "액션  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/11708.html"
+        },
+        {
+          "title": "절대군림",
+          "genre": "액션  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/16436.html"
+        },
+        {
+          "title": "절대회귀",
+          "genre": "무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/16071.html"
+        },
+        {
+          "title": "집구석 절대자",
+          "genre": "판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/17360.html"
+        },
+        {
+          "title": "천마는 평범하게 살 수 없다",
+          "genre": "스토리  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/9975.html"
+        },
+        {
+          "title": "천마육성",
+          "genre": "액션  스토리  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/10528.html"
+        },
+        {
+          "title": "천중용문",
+          "genre": "액션  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/17510.html"
+        },
+        {
+          "title": "천하제일 대사형",
+          "genre": "액션  판타지  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/12368.html"
+        },
+        {
+          "title": "천하제일인의 소꿉친구",
+          "genre": "판타지  로맨스  무협",
+          "publisher": "카카오",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/16107.html"
+        },
+        {
+          "title": "천화서고 대공자",
+          "genre": "무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/12862.html"
+        },
+        {
+          "title": "철혈검가 사냥개의 회귀",
+          "genre": "소년",
+          "publisher": "카카오",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/13332.html"
+        },
+        {
+          "title": "초인의 시대",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/2985.html"
+        },
+        {
+          "title": "태존비록",
+          "genre": "액션  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/18444.html"
+        },
+        {
+          "title": "템빨",
+          "genre": "액션  판타지",
+          "publisher": "카카오",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/4120.html"
+        },
+        {
+          "title": "픽 미 업!",
+          "genre": "소년",
+          "publisher": "카카오",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/12706.html"
+        },
+        {
+          "title": "하수전설",
+          "genre": "액션  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/19820.html"
+        },
+        {
+          "title": "현질무신",
+          "genre": "액션  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/19268.html"
+        },
+        {
+          "title": "화산귀환",
+          "genre": "판타지  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/9500.html"
+        },
+        {
+          "title": "환생천마",
+          "genre": "판타지  무협",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/15375.html"
+        },
+        {
+          "title": "환생했더니 대공의 셋째 아들",
+          "genre": "판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/18940.html"
+        },
+        {
+          "title": "회귀한 용병은 다 계획이 있다",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/16380.html"
+        },
+        {
+          "title": "히든 특성 13개 들고 시작한다",
+          "genre": "액션  판타지",
+          "publisher": "네이버",
+          "weekday": -1,
+          "link": "https://blacktoon423.com/webtoon/18899.html"
+        }
+      ]
+    }
+  ],
   "sites": [
     {
       "id": "5",
@@ -15,7 +492,8 @@
     "2",
     "3",
     "4",
-    "5"
+    "5",
+    "8"
   ],
-  "updated": "2026-10-10T18:16:38+00:00"
+  "updated": "2026-10-11T08:27:58+00:00"
 }
