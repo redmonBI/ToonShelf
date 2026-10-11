@@ -1,3 +1,9 @@
+# ToonShelf 3.7.0
+
+Android 스마트폰·태블릿 **설치형 APK**와 PC 패치를 같은 버전으로 제공합니다. [최신 배포](https://github.com/redmonBI/ToonShelf/releases/latest)에서 Android APK 또는 Windows ZIP을 선택하세요.
+
+APK에서 **대표 폴더 불러오기**로 작품 다운로드 폴더를 지정하면 하위 작품·회차를 찾아 PC 순서 기록을 사용해 세로로 읽습니다. 선택한 원본 폴더에서 직접 읽으며 오프라인 사용과 폴더 연결 기억을 지원합니다. 사이트·내 웹툰 목록·다운로드 그래프·자동 예약·속도 제한·계정·친구 추천 기능을 모바일 화면으로 제공합니다. [Android 안내와 플랫폼 차이](mobile/README.md)를 확인하세요. 기존 Windows 설치 폴더 패치와 개인 자료 보존 방식은 유지합니다.
+
 # ToonShelf 3.6.0
 
 ## 작품 정보 매칭 · 요일 복수 선택 · 모바일 앱

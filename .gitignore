@@ -12,3 +12,10 @@ Vendor/
 ThirdParty/
 reading_preview.png
 viewer_preview.png
+
+android_app/node_modules/
+android_app/android/.gradle/
+*.jks
+*.keystore
+*.apk
+!ToonShelf_Android_Source.zip

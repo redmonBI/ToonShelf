@@ -3,6 +3,7 @@ import json,webbrowser
 from pathlib import Path
 from PySide6.QtWidgets import QDialog,QVBoxLayout,QLabel,QPushButton,QFileDialog,QMessageBox
 MOBILE_URL='https://redmonbi.github.io/ToonShelf/mobile/'
+APK_URL='https://github.com/redmonBI/ToonShelf/releases/latest'
 
 def mobile_snapshot(host):
     from app_services import sanitize_snapshot,portable_work
@@ -17,9 +18,9 @@ class MobileDialog(QDialog):
     def __init__(self,host):
         super().__init__(host);self.host=host;self.setWindowTitle('ToonShelf · 스마트폰·패드 앱');self.resize(560,410);lay=QVBoxLayout(self)
         title=QLabel('어디서든 이어 읽기');title.setStyleSheet('font-size:24px;font-weight:700');lay.addWidget(title)
-        note=QLabel('Android의 Chrome에서 아래 주소를 열고 메뉴 → 앱 설치 / 홈 화면에 추가를 선택하세요.\n\n같은 계정으로 목록을 불러오거나 목록 JSON을 가져올 수 있습니다.\n이미지는 PC의 ‘기기용 내보내기’에서 회차별 CBZ로 내보낸 뒤 스마트폰으로 옮겨 ‘파일 가져오기’를 사용하세요.\n\n모바일 앱은 가져온 회차를 오프라인으로 읽습니다. PC 자동 다운로드는 PC 프로그램이 실행 중일 때 진행됩니다.');note.setWordWrap(True);lay.addWidget(note)
+        note=QLabel('Android 스마트폰·태블릿은 Android APK를 설치하세요. PC와 같은 계정으로 목록을 불러올 수 있습니다.\n\nPC의 대표 다운로드 폴더를 기기로 옮기고 앱의 ‘대표 폴더 불러오기’에서 선택하면 하위 작품·회차를 찾습니다. .toonshelf.sqlite3 또는 _reading_order.json을 함께 옮기면 읽기 순서·분류 기록도 사용합니다.\n\n이미지를 복사하지 않고 선택한 폴더에서 오프라인으로 읽습니다. APK 다운로드·예약은 해당 Android 기기에서 진행되며 PC 작업은 PC에서 별도로 진행됩니다. PC·APK는 같은 버전의 릴리스에 게시합니다.');note.setWordWrap(True);lay.addWidget(note)
         link=QLabel(MOBILE_URL);link.setTextInteractionFlags(__import__('PySide6.QtCore',fromlist=['Qt']).Qt.TextSelectableByMouse);lay.addWidget(link)
-        for text,fn in [('모바일 앱 열기',lambda:webbrowser.open(MOBILE_URL)),('목록 JSON 내보내기',self.export),('닫기',self.accept)]:
+        for text,fn in [('Android APK 설치·업데이트',lambda:webbrowser.open(APK_URL)),('모바일 웹앱 열기',lambda:webbrowser.open(MOBILE_URL)),('목록 JSON 내보내기',self.export),('닫기',self.accept)]:
             b=QPushButton(text);b.clicked.connect(fn);lay.addWidget(b)
     def export(self):
         filename,_=QFileDialog.getSaveFileName(self,'모바일로 옮길 목록 저장','ToonShelf_목록.json','JSON (*.json)')

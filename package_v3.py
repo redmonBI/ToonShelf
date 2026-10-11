@@ -27,6 +27,8 @@ with ZipFile(target,'w',ZIP_DEFLATED,compresslevel=6) as z:
     for name in ['requirements.txt','ToonShelf.spec','install.bat','run.bat']:z.write(root/name,Path('ToonShelf')/'Source'/name)
     for p in (root/'mobile').rglob('*'):
         if p.is_file() and 'node_modules' not in p.parts:z.write(p,Path('ToonShelf')/'Source'/p.relative_to(root))
+    if (root/'ToonShelf_Android_Source.zip').is_file():
+        z.write(root/'ToonShelf_Android_Source.zip',Path('ToonShelf')/'Source'/'ToonShelf_Android_Source.zip')
 with ZipFile(target) as z:assert z.testzip() is None
 sha=hashlib.sha256(target.read_bytes()).hexdigest()
 (root/'SHA256SUMS.txt').write_text(sha+'  '+target.name+'\n',encoding='utf-8')

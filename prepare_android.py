@@ -9,7 +9,7 @@ WEB = APP / 'www'
 WEB.mkdir(exist_ok=True)
 for path in PUBLIC.rglob('*'):
     rel = path.relative_to(PUBLIC)
-    if path.is_file() and not any(p in {'node_modules', 'tests', '__pycache__'} for p in rel.parts) and path.suffix.lower() in {'.html', '.js', '.css', '.png', '.svg', '.webmanifest', '.json'} and path.name not in {'package.json', 'package-lock.json'}:
+    if path.is_file() and not any(p in {'node_modules', 'tests', '__pycache__'} for p in rel.parts) and path.suffix.lower() in {'.html', '.js', '.css', '.png', '.svg', '.webmanifest', '.json', '.license'} and path.name not in {'package.json', 'package-lock.json'}:
         dest = WEB / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, dest)
