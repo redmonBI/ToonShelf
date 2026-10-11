@@ -43,6 +43,7 @@ class Work:
     genre: str = ''
     cover: str = ''
     publisher: str = ''
+    weekday: int = -1
 
 
 @dataclass
@@ -347,7 +348,13 @@ class Browser:
                     break
                 last = count
                 self.page.wait_for_timeout(250)
-            works += self.rendered_catalog()
+            day_text=tab.inner_text().strip()
+            match=re.fullmatch(r'([월화수목금토일])(?:요일)?\s*(?:\(\s*[\d,]+\s*\))?',day_text) if selector.startswith('.nav_pday') else None
+            day='월화수목금토일'.index(match.group(1)) if match else -1
+            current=self.rendered_catalog()
+            for work in current:
+                if day>=0:work.weekday=day
+            works += current
         # Only explicit pagination links on the current host are followed.
         pending = self.page.locator('.pagination a[href]').evaluate_all('(nodes) => nodes.map(a => a.href)')
         visited = {url.rstrip('/')}
@@ -360,7 +367,11 @@ class Browser:
             self.visit(target, 'a.toon-link')
             works += self.rendered_catalog()
             pending += self.page.locator('.pagination a[href]').evaluate_all('(nodes) => nodes.map(a => a.href)')
-        unique = {w.url: w for w in works}
+        unique={}
+        for work in works:
+            previous=unique.get(work.url)
+            if previous and work.weekday<0:work.weekday=previous.weekday
+            unique[work.url]=work
         return list(unique.values())
 
     def rendered_catalog(self):
@@ -432,6 +443,7 @@ def download(cfg, works, control, emit):
                 archive.record_work(work)
                 for sequence, episode in enumerate(episodes, 1):
                     archive.record_episode(work, episode, sequence)
+                archive.record_plan(work,episodes,cfg)
                 episodes = select_episodes(episodes,cfg)
                 plans += [(work, e) for e in episodes]
             emit('plan', len(plans))

@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlencode,urlsplit
 from zipfile import ZipFile
 
-VERSION='3.4.1'
+VERSION='3.5.0'
 REPOSITORY='redmonBI/ToonShelf'
 def repository(value):
     value=value.strip().removeprefix('https://github.com/').rstrip('/')
@@ -36,7 +36,7 @@ def version_tuple(value):
 def issue_link(repo,payload):
     from community_rules import apply_request
     # Validate shape locally; authorization is checked by trusted action again.
-    if payload.get('action') in ['recommend','site_add']:
+    if payload.get('action') in ['recommend','recommend_list','site_add']:
         apply_request({},payload,'preview','preview','preview')
     return f'https://github.com/{repository(repo)}/issues/new?'+urlencode({'title':'[ToonShelf] '+str(payload.get('action')),'body':'```json\n'+json.dumps(payload,ensure_ascii=False,indent=2)+'\n```'})
 def prepare_update(release,output,repo=REPOSITORY):

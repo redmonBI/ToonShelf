@@ -85,7 +85,9 @@ def filter_works(works,store,weekday=None,genre='',publisher='',favorite_only=Fa
     metadata={e['key']:e for e in store.entries()};result=[]
     for work in works:
         value=work_dict(work);m=metadata.get(work_key(value),{});g=m.get('genre',value.get('genre',''));p=m.get('publisher',value.get('publisher',''));favorite=bool(m.get('favorite'))
-        if weekday is not None and m.get('weekday',-1)!=weekday:continue
+        day=m.get('weekday',-1)
+        if day<0:day=value.get('weekday',-1)
+        if weekday is not None and day!=weekday:continue
         if genre and genre.casefold() not in g.casefold():continue
         if publisher and publisher.casefold()!=p.casefold():continue
         if favorite_only and not favorite:continue

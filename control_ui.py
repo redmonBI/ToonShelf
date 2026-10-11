@@ -97,7 +97,7 @@ class CommunityDialog(TaskDialog):
         self.body=QPlainTextEdit();self.body.setReadOnly(True);lay.addWidget(self.body)
         self.table.itemSelectionChanged.connect(self.detail)
         row=QHBoxLayout()
-        for title,fn in [('새로고침',self.refresh),('추천 작성',lambda:self.form()),('동감 / 취소',self.vote),('수정',self.edit),('삭제',self.delete)]:row.addWidget(button(title,fn))
+        for title,fn in [('새로고침',self.refresh),('추천 작성',lambda:self.form()),('내 웹툰 목록 전체 공유',self.share_list),('동감 / 취소',self.vote),('수정',self.edit),('삭제',self.delete)]:row.addWidget(button(title,fn))
         lay.addLayout(row);lay.addWidget(QLabel('누구나 작성·동감·수정·삭제 가능합니다. GitHub 로그인 후 요청을 등록하면 자동 처리되며, 새로고침하면 반영됩니다.'))
         self.refresh()
     def refresh(self):self.task(lambda:community(self.repo),self.loaded)
@@ -113,7 +113,14 @@ class CommunityDialog(TaskDialog):
         n=self.table.currentRow();return self.posts[n] if hasattr(self,'posts') and 0<=n<len(self.posts) else None
     def detail(self):
         p=self.selected()
-        if p:self.body.setPlainText(p['body']+'\n\n'+p.get('link',''))
+        if p:
+            from collections_store import DAYS
+            lines=[p['body'],p.get('link','')]
+            for i,w in enumerate(p.get('works',[]),1):lines.append(f"{i}. {w['title']} · {w['genre']} · {w.get('publisher') or '미분류'} · {DAYS[w['weekday']] if w.get('weekday',-1)>=0 else '요일 미지정'}\n{w['link']}")
+            self.body.setPlainText('\n\n'.join(filter(None,lines)))
+    def share_list(self):
+        from share_list_ui import ShareListDialog
+        ShareListDialog(self.owner,self).exec()
     def submit(self,payload):
         try:
             link=issue_link(self.repo,payload)

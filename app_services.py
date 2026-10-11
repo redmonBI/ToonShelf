@@ -9,7 +9,7 @@ from automation_store import AutoStore
 from collections_store import CollectionStore,as_work
 from queue_store import QueueStore
 
-SYNC_KEYS={'theme','menu_compact','rules_hidden','rules_folded','queue_view','reader_focus','reader_hide_top','reader_hide_bottom','reader_background','reader_width','reader_mode','hidden_genres','catalog_sort','latest_count','notifications_enabled','download_concurrency','network_policy'}
+SYNC_KEYS={'theme','menu_compact','rules_hidden','rules_folded','queue_view','reader_focus','reader_slim','reader_hide_top','reader_hide_bottom','reader_background','reader_width','reader_mode','hidden_genres','catalog_sort','latest_count','notifications_enabled','download_concurrency','network_policy'}
 ACCOUNT_SERVER='https://toon-shelf-sync.lovable.app/api/public'
 
 class PendingConflict(ValueError):

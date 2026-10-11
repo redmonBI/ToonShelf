@@ -26,7 +26,7 @@ def main():
     for issue in requests:
         try:
             body=issue.get('body') or ''
-            if len(body)>15000:raise ValueError('Request too large')
+            if len(body)>64000:raise ValueError('Request too large')
             match=re.fullmatch(r'\s*```json\s*\n(.*?)\n```\s*',body,re.S)
             if not match:raise ValueError('Expected a JSON request')
             request=json.loads(match.group(1))

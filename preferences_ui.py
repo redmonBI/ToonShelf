@@ -26,6 +26,7 @@ class SettingsCenter(QDialog):
         screen.addRow(QLabel('모든 화면 상단의 ⚙ 설정에서 다시 변경할 수 있습니다.'))
         reader=self.page('읽기');self.mode=QComboBox();self.mode.addItems(['프로그램 안에서 세로로 읽기','OpenComic 별도 창으로 읽기']);self.mode.setCurrentIndex(int(host.cfg.get('reader_mode')=='opencomic'));self.mode.currentIndexChanged.connect(self.change_mode);reader.addRow('기본 뷰어',self.mode)
         self.check(reader,'집중 보기 · 메뉴와 위·아래 도구 숨기기','reader_focus')
+        self.check(reader,'슬림 보기 · 32px 텍스트 메뉴로 길게 읽기','reader_slim')
         self.check(reader,'읽을 때 상단 도구 숨기기','reader_hide_top')
         self.check(reader,'읽을 때 하단 읽기 폭·진행률 숨기기','reader_hide_bottom')
         self.background_label=QLabel();reader.addRow('이미지 바깥 배경색',self.background_label)
@@ -35,7 +36,7 @@ class SettingsCenter(QDialog):
         reader.addRow(row);row=QHBoxLayout();row.addWidget(button('원하는 색 선택…',self.choose_background));row.addWidget(button('테마 기본색으로 복원',lambda:self.set_background('')));reader.addRow(row);self.update_background()
         self.read_width=QSpinBox();self.read_width.setRange(400,1600);self.read_width.setSuffix(' px');self.read_width.setValue(host.cfg.get('reader_width',850));self.read_width.valueChanged.connect(self.change_width);reader.addRow('최대 읽기 폭',self.read_width)
         self.exe=QLineEdit(host.opencomic_path());self.exe.setReadOnly(True);row=QHBoxLayout();row.addWidget(self.exe);row.addWidget(button('찾기…',self.choose_viewer));reader.addRow('OpenComic 실행 파일',row)
-        help_text=QLabel('F9: 집중 보기 켜기·끄기  /  Esc: 도구 다시 표시\nAlt + ← / →: 이전·다음 화\n숨긴 상태에서는 화면 오른쪽 위의 ⚙ 또는 도구 표시를 누르세요.\n배경색은 원본 이미지에 영향을 주지 않습니다.');help_text.setWordWrap(True);reader.addRow(help_text)
+        help_text=QLabel('슬림 보기: 32px 텍스트 메뉴만 남겨 이미지를 길게 표시\nF11: 전체 화면 / F9: 집중 보기 / Esc: 화면·도구 복원\nAlt + ← / →: 이전·다음 화\n배경색은 원본 이미지에 영향을 주지 않습니다.');help_text.setWordWrap(True);reader.addRow(help_text)
         download=self.page('다운로드');row=QHBoxLayout();self.path_label=QLabel(host.path.text());self.path_label.setWordWrap(True);row.addWidget(self.path_label,1);row.addWidget(button('저장 폴더 변경…',self.choose_folder));download.addRow('저장 위치',row)
         from automation_ui import tail_combo
         self.latest=tail_combo(host.latest.currentData());self.latest.currentIndexChanged.connect(lambda i:host.latest.setCurrentIndex(i));download.addRow('일반 다운로드 범위',self.latest)

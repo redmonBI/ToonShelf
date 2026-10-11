@@ -1218,7 +1218,7 @@ class Window(QMainWindow):
     def apply_view_preferences(self):
         pane=getattr(self,'offline',None)
         reading=bool(pane and self.content_stack.currentWidget()==pane and pane.stack.currentIndex()==1 and self.cfg.get('reader_mode','embedded')=='embedded')
-        focused=reading and self.cfg.get('reader_focus',False)
+        focused=reading and (self.cfg.get('reader_focus',False) or self.cfg.get('reader_slim',False))
         self.app_toolbar.setVisible(not focused);self.sidebar.setVisible(not focused)
         if pane:pane.apply_preferences(reading)
 

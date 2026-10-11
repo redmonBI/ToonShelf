@@ -51,6 +51,11 @@ class LibraryArchive(Archive):
         self.db.execute('''CREATE TABLE IF NOT EXISTS works (
             key TEXT PRIMARY KEY, title TEXT, url TEXT, genre TEXT DEFAULT '', publisher TEXT DEFAULT '',
             cover TEXT DEFAULT '', genre_override TEXT, publisher_override TEXT)''')
+        if 'weekday' not in [r['name'] for r in self.db.execute('PRAGMA table_info(works)')]:
+            try:self.db.execute('ALTER TABLE works ADD COLUMN weekday INT NOT NULL DEFAULT -1')
+            except sqlite3.OperationalError:
+                if 'weekday' not in [r['name'] for r in self.db.execute('PRAGMA table_info(works)')]:raise
+        self.db.execute('CREATE TABLE IF NOT EXISTS work_inventory(key TEXT PRIMARY KEY,episode_keys TEXT,checked TEXT,latest_count INT)')
         episode_columns = {'work_key': "TEXT DEFAULT ''", 'url': "TEXT DEFAULT ''", 'upload_date': "TEXT DEFAULT ''",
                            'folder': "TEXT DEFAULT ''", 'number': 'REAL DEFAULT -1', 'sequence': 'INT DEFAULT 0',
                            'first_downloaded': "TEXT DEFAULT ''", 'last_downloaded': "TEXT DEFAULT ''",
@@ -87,6 +92,12 @@ class LibraryArchive(Archive):
         self.db.execute('CREATE INDEX IF NOT EXISTS image_episode_idx ON images(episode_key,position)')
         self.db.commit()
 
+    def record_plan(self,work,episodes,cfg):
+        from urllib.parse import urlsplit
+        keys=[self.work_key(work)+'|'+urlsplit(e.url).path for e in episodes]
+        self.db.execute('INSERT OR REPLACE INTO work_inventory VALUES(?,?,?,?)',(self.work_key(work),json.dumps(keys),utc_now(),int(cfg.get('latest_count',0))))
+        self.db.commit()
+
     @staticmethod
     def work_key(work):
         from urllib.parse import urlsplit
@@ -99,6 +110,7 @@ class LibraryArchive(Archive):
             publisher=CASE WHEN excluded.publisher<>'' THEN excluded.publisher ELSE works.publisher END,
             cover=CASE WHEN excluded.cover<>'' THEN excluded.cover ELSE works.cover END''',
             (self.work_key(work), work.title, work.url, work.genre, work.publisher, work.cover))
+        if work.weekday in range(7):self.db.execute('UPDATE works SET weekday=? WHERE key=?',(work.weekday,self.work_key(work)))
         self.db.commit()
 
     def record_episode(self, work, episode, sequence=0):
@@ -158,7 +170,7 @@ class LibraryArchive(Archive):
         self.db.commit()
 
     def works(self, verify_files=True):
-        rows=[dict(row) for row in self.db.execute('''SELECT w.key,w.title,w.url,w.cover,
+        rows=[dict(row) for row in self.db.execute('''SELECT w.key,w.title,w.url,w.cover,w.weekday,
             COALESCE(w.genre_override,w.genre) AS genre,COALESCE(w.publisher_override,w.publisher) AS publisher,
             COUNT(DISTINCT i.episode_key) AS episodes,COUNT(i.key) AS images,COALESCE(SUM(i.size),0) AS size,
             MAX(i.last_downloaded) AS last_downloaded,
@@ -166,6 +178,11 @@ class LibraryArchive(Archive):
             FROM works w JOIN episodes e ON e.work_key=w.key JOIN images i ON i.episode_key=e.key
             GROUP BY w.key ORDER BY last_downloaded DESC,w.title''')]
         for w in rows:
+            inventory=self.db.execute('SELECT * FROM work_inventory WHERE key=?',(w['key'],)).fetchone()
+            known=self.db.execute('SELECT key,sequence FROM episodes WHERE work_key=?',(w['key'],)).fetchall()
+            w['expected_episode_keys']=json.loads(inventory['episode_keys']) if inventory else [e['key'] for e in known] if known and all(e['sequence']>0 for e in known) else []
+            w['inventory_checked']=inventory['checked'] if inventory else ''
+            w['latest_count']=inventory['latest_count'] if inventory else 0
             if not verify_files:
                 w['expected_size']=w['size'];w['missing']=0;continue
             w['expected_size']=w['size'];w['size']=0;w['missing']=0

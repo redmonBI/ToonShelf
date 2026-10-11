@@ -18,6 +18,9 @@ def table(headers):
     t=QTableWidget(0,len(headers));t.setHorizontalHeaderLabels(headers);t.verticalHeader().hide();t.verticalHeader().setDefaultSectionSize(56);t.setSelectionBehavior(QAbstractItemView.SelectRows);t.setEditTriggers(QAbstractItemView.NoEditTriggers);t.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive);t.horizontalHeader().setStretchLastSection(True);return t
 
 class AutomationDialog(QDialog):
+    def share_list(self):
+        from share_list_ui import ShareListDialog
+        ShareListDialog(self.host,self).exec()
     def __init__(self,host):
         super().__init__(host);self.host=host;self.store=host.auto_store;self.setWindowTitle('ToonShelf · 내 웹툰 목록 (자동 다운로드)');self.resize(1150,820)
         lay=QVBoxLayout(self);lay.setContentsMargins(24,20,24,20);title=QLabel('매주 돌아오는 나의 작품');title.setStyleSheet('font-size:25px;font-weight:700');lay.addWidget(title)
@@ -25,6 +28,7 @@ class AutomationDialog(QDialog):
         self.tabs=QTabWidget();lay.addWidget(self.tabs,1)
         page=QWidget();p=QVBoxLayout(page);tools=QHBoxLayout();self.filter=QComboBox();self.filter.addItems(['모든 작품']+list(CATEGORIES.values()));self.filter.currentIndexChanged.connect(self.render);self.search=QLineEdit();self.search.setPlaceholderText('자동 목록 안에서 작품 검색');self.search.textChanged.connect(self.render);tools.addWidget(self.filter);tools.addWidget(self.search,1)
         tools.addWidget(button('작품 검색·추가',self.find_works));tools.addWidget(button('체크한 사이트 작품 추가',self.add_selected));tools.addWidget(button('읽고 있는 작품 추가',self.add_current));p.addLayout(tools)
+        p.addWidget(button('친구 추천에 내 웹툰 목록 전체 공유',self.share_list))
         self.collection_filters=CollectionFilters(self.render,self);p.addWidget(self.collection_filters)
         self.list=table(['예약 체크','작품명','목록 분류','업데이트 범위','남길 최신 회차','보관 기간 (일)','작품 요일','즐겨찾기']);p.addWidget(self.list,1)
         for i,width in enumerate([90,250,150,150,160,160]):self.list.setColumnWidth(i,width)

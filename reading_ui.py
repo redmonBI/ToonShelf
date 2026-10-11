@@ -5,7 +5,7 @@ from math import sqrt
 from PySide6.QtCore import Qt, QTimer, QSize, QRect, QObject, Signal, QRunnable, QThreadPool
 from PySide6.QtGui import QImageReader, QImage, QPainter, QColor, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,
-    QComboBox,QScrollArea,QGridLayout,QStackedWidget,QSlider,QProgressBar,QDialog,QMessageBox,QFrame)
+    QComboBox,QScrollArea,QGridLayout,QStackedWidget,QSlider,QProgressBar,QDialog,QMessageBox,QFrame,QTabBar,QCheckBox)
 from library_ui import LibraryTask
 from library import size_text
 from reading import shelf_index,chapter_images,prepare_opencomic,opencomic
@@ -91,11 +91,21 @@ class OfflineLibrary(QWidget):
         tools.addWidget(self.search,1);tools.addWidget(self.genre);tools.addWidget(self.sort);sl.addLayout(tools)
         from notifications_ui import CollectionFilters
         self.collection_filters=CollectionFilters(self.filter);sl.addWidget(self.collection_filters)
+        daytools=QHBoxLayout();self.today=QCheckBox('오늘 요일 자동 검색');self.today.toggled.connect(self.today_changed);daytools.addWidget(self.today);daytools.addWidget(btn('사이트에서 요일 찾기',self.find_weekdays));daytools.addStretch();sl.addLayout(daytools)
+        self.scope_tabs=QTabBar();self.scope_tabs.setExpanding(False)
+        for name in ['전체','내 웹툰 · 최근 회차','전회차 보관','일부 회차']:self.scope_tabs.addTab(name)
+        self.scope_tabs.currentChanged.connect(self.filter);sl.addWidget(self.scope_tabs)
+        scope_hint=QLabel('전회차 보관은 마지막 회차 확인 기준입니다. 요일을 찾지 못한 작품은 미지정으로 표시됩니다.');scope_hint.setObjectName('muted');sl.addWidget(scope_hint)
         self.shelf_scroll=QScrollArea();self.shelf_scroll.setWidgetResizable(True);self.grid_widget=QWidget();self.grid=QGridLayout(self.grid_widget);self.grid.setAlignment(Qt.AlignTop);self.shelf_scroll.setWidget(self.grid_widget);sl.addWidget(self.shelf_scroll,1)
         self.pager=Pagination();self.pager.requested.connect(self.go_page);sl.addWidget(self.pager);self.stack.addWidget(shelf)
         reader=QWidget();rl=QVBoxLayout(reader);self.reader_layout=rl;self.reader_bar=QWidget();bar=QHBoxLayout(self.reader_bar);bar.addWidget(btn('‹ 라이브러리',self.back));self.prev=btn('이전 화',lambda:self.move(-1));bar.addWidget(self.prev)
         self.chapters=QComboBox();self.chapters.currentIndexChanged.connect(self.select_chapter);bar.addWidget(self.chapters,1)
-        self.next=btn('다음 화',lambda:self.move(1));bar.addWidget(self.next);bar.addWidget(btn('OpenComic으로 열기',self.external));rl.addWidget(self.reader_bar)
+        self.next=btn('다음 화',lambda:self.move(1));bar.addWidget(self.next);bar.addWidget(btn('슬림 보기',lambda:self.set_slim(True)));bar.addWidget(btn('OpenComic으로 열기',self.external));rl.addWidget(self.reader_bar)
+        self.slim_bar=QWidget();self.slim_bar.setObjectName('readerSlim');self.slim_bar.setFixedHeight(32);slim=QHBoxLayout(self.slim_bar);slim.setContentsMargins(4,0,4,0);slim.setSpacing(3)
+        self.slim_bar.setStyleSheet('#readerSlim QPushButton {border:0;padding:1px 6px;min-height:22px;max-height:24px;} #readerSlim QComboBox {padding:0px 20px 0px 5px;min-height:24px;max-height:24px;}')
+        slim.addWidget(btn('목록',self.back));self.slim_title=QLabel();self.slim_title.setMaximumWidth(240);slim.addWidget(self.slim_title)
+        self.slim_prev=btn('이전',lambda:self.move(-1));slim.addWidget(self.slim_prev);self.slim_chapters=QComboBox();self.slim_chapters.setMaximumWidth(190);self.slim_chapters.currentIndexChanged.connect(self.chapters.setCurrentIndex);self.chapters.currentIndexChanged.connect(self.slim_chapters.setCurrentIndex);slim.addWidget(self.slim_chapters);self.slim_next=btn('다음',lambda:self.move(1));slim.addWidget(self.slim_next);slim.addStretch()
+        self.slim_position=QLabel('0%');slim.addWidget(self.slim_position);slim.addWidget(btn('설정',host.reader_settings));slim.addWidget(btn('기본 보기',self.show_tools));slim.addWidget(btn('전체 화면',self.toggle_fullscreen));rl.addWidget(self.slim_bar)
         self.reader_footer=QWidget();widthbar=QHBoxLayout(self.reader_footer);widthbar.addWidget(QLabel('읽기 폭'));self.width_slider=QSlider(Qt.Horizontal);self.width_slider.setRange(400,1600);self.width_slider.setValue(host.cfg.get('reader_width',850));widthbar.addWidget(self.width_slider);self.width_slider.valueChanged.connect(self.resize_reading)
         self.position=QLabel();widthbar.addWidget(self.position)
         self.read_scroll=QScrollArea();self.read_scroll.setWidgetResizable(True);self.canvas=ComicCanvas(self.read_scroll);self.read_scroll.setWidget(self.canvas);rl.addWidget(self.read_scroll,1);rl.addWidget(self.reader_footer);self.stack.addWidget(reader)
@@ -106,43 +116,63 @@ class OfflineLibrary(QWidget):
         self.restore_fraction=None
         self.resize_timer=QTimer(self);self.resize_timer.setSingleShot(True);self.resize_timer.timeout.connect(self.apply_width)
         self.progress_timer=QTimer(self);self.progress_timer.setSingleShot(True);self.progress_timer.timeout.connect(self.save_position)
-        for key,fn in [('Alt+Left',lambda:self.move(-1)),('Alt+Right',lambda:self.move(1)),('Escape',self.escape),('F9',self.toggle_focus)]:
+        for key,fn in [('Alt+Left',lambda:self.move(-1)),('Alt+Right',lambda:self.move(1)),('Escape',self.escape),('F9',self.toggle_focus),('F11',self.toggle_fullscreen)]:
             shortcut=QShortcut(QKeySequence(key),self);shortcut.activated.connect(fn)
         self.apply_preferences(False)
+        self.today_timer=QTimer(self);self.today_timer.timeout.connect(self.refresh_today);self.today_timer.start(60000)
+        saved=self.host.cfg.get('library_filters',{});self.restoring_filters=True
+        self.scope_tabs.setCurrentIndex(min(3,max(0,int(saved.get('scope',0)))));self.collection_filters.day.setCurrentIndex(max(0,self.collection_filters.day.findData(saved.get('day'))));self.today.setChecked(bool(saved.get('today',False)));self.restoring_filters=False
 
     def toggle_focus(self):self.host.set_view_preference('reader_focus',not self.host.cfg.get('reader_focus',False))
     def show_tools(self):
-        self.host.cfg.update(reader_focus=False,reader_hide_top=False,reader_hide_bottom=False);self.host.persist_settings();self.host.apply_view_preferences()
+        self.host.cfg.update(reader_focus=False,reader_slim=False,reader_hide_top=False,reader_hide_bottom=False);self.host.persist_settings();self.host.apply_view_preferences()
+    def set_slim(self,value):
+        if value:self.host.cfg['reader_focus']=False
+        self.host.set_view_preference('reader_slim',bool(value))
+    def toggle_fullscreen(self):
+        if self.stack.currentIndex()!=1:return
+        if self.host.isFullScreen():self.host.showNormal();self.reader_fullscreen=False
+        else:self.host.showFullScreen();self.reader_fullscreen=True;self.set_slim(True)
     def escape(self):
-        if self.stack.currentIndex()==1 and any(self.host.cfg.get(k) for k in ('reader_focus','reader_hide_top','reader_hide_bottom')):self.show_tools()
+        if self.host.isFullScreen() and getattr(self,'reader_fullscreen',False):self.host.showNormal();self.reader_fullscreen=False
+        elif self.stack.currentIndex()==1 and any(self.host.cfg.get(k) for k in ('reader_focus','reader_slim','reader_hide_top','reader_hide_bottom')):self.show_tools()
         else:self.back()
     def apply_preferences(self,reading):
         if self.closed:return
         focus=reading and self.host.cfg.get('reader_focus',False)
-        top=reading and (focus or self.host.cfg.get('reader_hide_top',False));bottom=reading and (focus or self.host.cfg.get('reader_hide_bottom',False))
-        layout_state=(focus,top,bottom)
+        slim=reading and self.host.cfg.get('reader_slim',False) and not focus
+        compact=focus or slim
+        top=reading and (compact or self.host.cfg.get('reader_hide_top',False));bottom=reading and (compact or self.host.cfg.get('reader_hide_bottom',False))
+        layout_state=(focus,slim,top,bottom)
         if self.images and getattr(self,'layout_state',None)!=layout_state:
             bar=self.read_scroll.verticalScrollBar();self.resize_fraction=bar.value()/max(1,bar.maximum());self.resize_timer.start(180)
         self.layout_state=layout_state
         self.header.setVisible(not top);self.status.setVisible(not top);self.reader_bar.setVisible(not top);self.reader_footer.setVisible(not bottom)
-        self.main_layout.setContentsMargins(*( (0,0,0,0) if focus else (28,24,28,24)))
-        self.reader_layout.setContentsMargins(*( (0,0,0,0) if focus else (9,9,9,9)))
-        self.main_layout.setSpacing(0 if focus else 6);self.reader_layout.setSpacing(0 if focus else 6)
+        self.slim_bar.setVisible(bool(slim));self.read_scroll.setFrameShape(QFrame.NoFrame if compact else QFrame.StyledPanel)
+        self.main_layout.setContentsMargins(*( (0,0,0,0) if compact else (28,24,28,24)))
+        self.reader_layout.setContentsMargins(*( (0,0,0,0) if compact else (9,9,9,9)))
+        self.main_layout.setSpacing(0 if compact else 6);self.reader_layout.setSpacing(0 if compact else 6)
         value=self.host.cfg.get('reader_background','');color=QColor(value) if value else None
         self.canvas.background=color if color and color.isValid() else None
-        self.canvas.update();self.quick.setVisible(bool(reading and (top or bottom)));self.quick.raise_();self.position_quick()
+        self.canvas.update();self.quick.setVisible(bool(reading and (top or bottom) and not slim));self.quick.raise_();self.position_quick()
     def position_quick(self):
         self.quick.adjustSize();self.quick.move(max(0,self.read_scroll.viewport().width()-self.quick.width()-14),8)
     def run(self,operation,done):
         if self.task and self.task.isRunning():return False
         self.loading.show();self.status.setText('불러오는 중…');self.prev.setEnabled(False);self.next.setEnabled(False);self.chapters.setEnabled(False)
+        self.slim_prev.setEnabled(False);self.slim_next.setEnabled(False);self.slim_chapters.setEnabled(False)
         self.task=LibraryTask(operation);self.task.event.connect(lambda k,v:self.status.setText(str(v)) if k=='log' else None)
         def result(state,value):
+            if self.closed:return
             if state=='success':done(value)
-            elif state=='error':self.status.setText('확인 필요 · '+str(value))
+            elif state=='error':
+                self.status.setText('확인 필요 · '+str(value));self.slim_title.setText('확인 필요 · '+str(value));self.slim_title.setToolTip(str(value))
         self.task.done.connect(result);self.task.finished.connect(self.ready);self.task.start();return True
     def ready(self):
+        if self.closed:return
         self.loading.hide();self.chapters.setEnabled(True);self.prev.setEnabled(bool(self.work) and self.chapter>0);self.next.setEnabled(bool(self.work) and self.chapter<len(self.work['chapters'])-1)
+        self.slim_chapters.setEnabled(True);self.slim_prev.setEnabled(self.prev.isEnabled());self.slim_next.setEnabled(self.next.isEnabled())
+        if getattr(self,'pending_catalog_refresh',False):self.pending_catalog_refresh=False;self.refresh()
     def refresh(self):
         if self.task and self.task.isRunning():return
         self.mirrors=[];self.mirror_work=None
@@ -151,13 +181,34 @@ class OfflineLibrary(QWidget):
     def loaded(self,rows):
         self.rows=rows;self.genre.blockSignals(True);self.genre.clear();self.genre.addItems(['모든 장르']+sorted({g for w in rows for g in w['genre'].replace(',',' ').split()}));self.genre.blockSignals(False)
         self.status.setText(f"{len(rows)}개 작품 · {sum(w['episodes'] for w in rows)}회차 · {size_text(sum(w['size'] for w in rows))}");self.filter()
-    def filter(self):self.page=0;self.render()
+    def today_changed(self,value):
+        self.collection_filters.day.setEnabled(not value);self.refresh_today();self.filter()
+    def refresh_today(self):
+        if self.today.isChecked():
+            from automation_store import local_now
+            self.collection_filters.day.setCurrentIndex(self.collection_filters.day.findData(local_now().weekday()))
+    def find_weekdays(self):
+        from core import Browser
+        cfg=dict(self.host.read_cfg(),_download_job=False)
+        def operation(control,emit):
+            with Browser(cfg,control,emit) as browser:return browser.catalog()
+        def found(works):
+            self.host.set_catalog([vars(w) for w in works]);self.pending_catalog_refresh=True
+        self.run(operation,found)
+    def filter(self):
+        if getattr(self,'restoring_filters',False):return
+        self.page=0;self.render()
+        value=dict(scope=self.scope_tabs.currentIndex(),day=self.collection_filters.day.currentData(),today=self.today.isChecked())
+        if self.host.cfg.get('library_filters')!=value:self.host.cfg['library_filters']=value;self.host.persist_settings()
     def turn_page(self,step):
         self.go_page(self.page+step)
     def go_page(self,index):
         count=max(1,(len(self.filtered())+11)//12);self.page=max(0,min(count-1,index));self.render();self.shelf_scroll.verticalScrollBar().setValue(0)
     def filtered(self):
-        rows=[w for w in self.rows if self.search.text().casefold() in w['title'].casefold() and (self.genre.currentIndex()==0 or self.genre.currentText() in w['genre'].replace(',',' ').split())]
+        from shelf_collections import enrich_shelf
+        source=enrich_shelf(self.rows,self.host.collection_store.entries(),self.host.auto_store.entries())
+        scope=['','recent','full','partial'][self.scope_tabs.currentIndex()]
+        rows=[w for w in source if (not scope or w['storage_scope']==scope) and self.search.text().casefold() in w['title'].casefold() and (self.genre.currentIndex()==0 or self.genre.currentText() in w['genre'].replace(',',' ').split())]
         i=self.sort.currentIndex();rows.sort(key=lambda w:w['title'] if i==1 else w['size'] if i==2 else w['last_downloaded'] or '',reverse=i!=1)
         return self.collection_filters.apply(rows,self.host.collection_store) if hasattr(self.host,'collection_store') else rows
     def render(self):
@@ -174,7 +225,9 @@ class OfflineLibrary(QWidget):
             else:art.setText('표지 없음')
             cl.addWidget(art);title=QLabel(w['title']);title.setWordWrap(True);title.setStyleSheet('font-size:16px;font-weight:700');cl.addWidget(title)
             meta=QLabel((w['genre'] or '미분류')+' · '+(w['publisher'] or '미분류'));meta.setObjectName('muted');cl.addWidget(meta)
-            cl.addWidget(QLabel(f"{w['episodes']}회차 · 기록 용량 {size_text(w['size'])}"));cl.addWidget(btn('계속 읽기  →',lambda checked=False,w=w:self.open_work(w)))
+            from collections_store import DAYS
+            day=DAYS[w['weekday']] if w['weekday']>=0 else '요일 미지정'
+            cl.addWidget(QLabel(w['storage_label']+' · '+day));cl.addWidget(QLabel(f"{w['episodes']}회차 · 기록 용량 {size_text(w['size'])}"));cl.addWidget(btn('계속 읽기  →',lambda checked=False,w=w:self.open_work(w)))
             if hasattr(self.host,'collection_store'):
                 row=QHBoxLayout();row.addWidget(btn('★ 즐겨찾기' if (self.host.collection_store.get(w) or {}).get('favorite') else '☆ 즐겨찾기',lambda checked=False,w=w:self.host.toggle_favorite(w)));row.addWidget(btn('요일 · 분류',lambda checked=False,w=w:self.host.work_settings(w)));cl.addLayout(row)
             card.setMinimumWidth(180)
@@ -183,8 +236,10 @@ class OfflineLibrary(QWidget):
     def open_work(self,work):
         if self.task and self.task.isRunning():return
         self.save_position();self.images=[];self.work=work;self.chapters.blockSignals(True);self.chapters.clear();self.chapters.addItems([e['folder'] for e in work['chapters']]);self.chapters.blockSignals(False)
+        self.slim_title.setText(self.slim_title.fontMetrics().elidedText(work['title'],Qt.ElideRight,230));self.slim_title.setToolTip(work['title']);self.slim_chapters.blockSignals(True);self.slim_chapters.clear();self.slim_chapters.addItems([e['folder'] for e in work['chapters']]);self.slim_chapters.blockSignals(False)
         saved=self.host.cfg.get('reading_positions',{}).get(work['key'],{});self.chapter=next((i for i,e in enumerate(work['chapters']) if e['key']==saved.get('chapter')),0)
         self.chapters.blockSignals(True);self.chapters.setCurrentIndex(self.chapter);self.chapters.blockSignals(False);self.stack.setCurrentIndex(1)
+        self.slim_chapters.setCurrentIndex(self.chapter)
         if self.host.cfg.get('reader_mode','embedded')=='opencomic':self.external()
         else:self.load_chapter()
         if hasattr(self.host,'apply_view_preferences'):self.host.apply_view_preferences()
@@ -222,13 +277,14 @@ class OfflineLibrary(QWidget):
         if hasattr(self,'quick'):QTimer.singleShot(0,self.position_quick)
     def scrolled(self):
         if self.closed:return
-        self.canvas.ensure_visible();bar=self.read_scroll.verticalScrollBar();self.position.setText(f'{round(bar.value()/max(1,bar.maximum())*100)}%');self.progress_timer.start(500)
+        self.canvas.ensure_visible();bar=self.read_scroll.verticalScrollBar();self.position.setText(f'{round(bar.value()/max(1,bar.maximum())*100)}%');self.slim_position.setText(self.position.text());self.progress_timer.start(500)
     def save_position(self):
         if self.closed or not self.work or not self.images or self.restore_fraction is not None:return
         bar=self.read_scroll.verticalScrollBar();key=self.work['chapters'][self.chapter]['key'];fraction=bar.value()/max(1,bar.maximum())
         positions=self.host.cfg.setdefault('reading_positions',{});pos=positions.setdefault(self.work['key'],{});pos.setdefault('offsets',{})[key]=fraction;pos.update(chapter=key,fraction=fraction);self.host.persist_settings()
     def back(self):
         self.save_position();self.stack.setCurrentIndex(0)
+        if getattr(self,'reader_fullscreen',False):self.host.showNormal();self.reader_fullscreen=False
         if hasattr(self.host,'apply_view_preferences'):self.host.apply_view_preferences()
     def external(self):
         if not self.work:return
@@ -254,7 +310,9 @@ class OfflineLibrary(QWidget):
         self.chapters.blockSignals(True);self.chapters.setCurrentIndex(self.chapter);self.chapters.blockSignals(False)
         self.external()
     def shutdown(self):
-        self.save_position();self.closed=True;self.progress_timer.stop();self.resize_timer.stop()
+        self.save_position();self.closed=True;self.progress_timer.stop();self.resize_timer.stop();self.today_timer.stop()
         if self.task and self.task.isRunning():self.task.control.stopped.set();return False
-        self.canvas.generation+=1;self.canvas.pool.clear();self.canvas.pool.waitForDone(1000)
-        return self.canvas.pool.activeThreadCount()==0
+        self.canvas.generation+=1;self.canvas.items=[];self.canvas.pool.clear();self.canvas.pool.waitForDone(1000)
+        complete=self.canvas.pool.activeThreadCount()==0
+        if complete:self.canvas.cache.clear();self.canvas.cache_bytes=0;self.canvas.pending.clear()
+        return complete

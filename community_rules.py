@@ -15,11 +15,23 @@ def apply_request(data,request,actor,admin,request_id,date=None):
     if not isinstance(request,dict):raise ValueError('잘못된 요청')
     action=request.get('action');actor=text(actor,100)
     date=date or datetime.now(timezone.utc).isoformat(timespec='seconds')
-    if action=='recommend':
+    if action in ('recommend','recommend_list'):
         post={'id':str(request_id),'author':text(request.get('author'),80),'account':actor,
             'title':text(request.get('title'),200),'genre':text(request.get('genre'),200),
             'body':text(request.get('body'),5000),'created':date,'updated':date,'votes':[]}
         if request.get('link'):post['link']=url(request['link'])
+        if action=='recommend_list':
+            items=request.get('works')
+            if not isinstance(items,list) or not 1<=len(items)<=200:raise ValueError('추천 목록은 요청당 1~200개 작품을 포함해야 합니다.')
+            cleaned=[];seen=set()
+            for item in items:
+                if not isinstance(item,dict):raise ValueError('목록 작품 형식을 확인하세요.')
+                day=item.get('weekday',-1)
+                if type(day) is not int or day not in range(-1,7):raise ValueError('목록의 요일을 확인하세요.')
+                link=url(item.get('link'))
+                if link in seen:continue
+                seen.add(link);cleaned.append(dict(title=text(item.get('title'),200),genre=text(item.get('genre'),200),publisher=text(item['publisher'],100) if item.get('publisher') else '',weekday=day,link=link))
+            post.update(kind='work_list',works=cleaned)
         data['posts'].append(post)
     elif action=='vote':
         post=next((p for p in data['posts'] if p['id']==str(request.get('id'))),None)
