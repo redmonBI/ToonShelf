@@ -3,12 +3,20 @@ import re
 import webbrowser
 import urllib.request
 from pathlib import Path
+from datetime import datetime,timezone,timedelta
 from urllib.parse import urljoin,urlsplit
 from bs4 import BeautifulSoup
 from PySide6.QtWidgets import QVBoxLayout,QHBoxLayout,QLabel,QTableWidget,QTableWidgetItem,QLineEdit,QFormLayout,QDialog,QMessageBox,QAbstractItemView,QPlainTextEdit
 from control_ui import TaskDialog,button
 from sharing import community,REPOSITORY,issue_link
 from community_rules import url
+
+def history_date(value):
+    try:
+        date=datetime.fromisoformat(value.replace('Z','+00:00'))
+        if date.tzinfo is None:date=date.replace(tzinfo=timezone.utc)
+        return date.astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')
+    except (ValueError,AttributeError):return '—'
 
 def latest_links(address):
     address=url(address)
@@ -63,9 +71,9 @@ class SitesDialog(TaskDialog):
         d=QDialog(self);d.setWindowTitle('공유 사이트 등록' if shared else '개인 사이트');lay=QFormLayout(d);fields={}
         for k,t in [('name','사이트 이름'),('url','현재 주소'),('news_url','최신 소식 / 주소 안내 페이지 · 선택')]:fields[k]=QLineEdit(existing.get(k,''));lay.addRow(t,fields[k])
         planned=QPlainTextEdit();planned.setPlaceholderText('변경 예정 주소 · 한 줄에 하나 · 모르면 비워 두세요');planned.setPlainText('\n'.join(existing.get('planned_urls',[])));planned.setMaximumHeight(90);lay.addRow('변경 예정',planned)
-        history=QTableWidget(0,2);history.setHorizontalHeaderLabels(['이전 주소 · 마지막 항목이 현재 주소','변경일']);rows=existing.get('history',[]) or ([dict(url=existing['url'],date=existing.get('updated',''))] if existing else []);history.setRowCount(len(rows))
+        history=QTableWidget(0,2);history.setHorizontalHeaderLabels(['이전 주소 · 마지막 항목이 현재 주소','변경일 (한국)']);rows=existing.get('history',[]) or ([dict(url=existing['url'],date=existing.get('updated',''))] if existing else []);history.setRowCount(len(rows))
         for i,h in enumerate(rows):
-            history.setItem(i,0,QTableWidgetItem(h['url']));history.setItem(i,1,QTableWidgetItem(h.get('date','')[:19]))
+            history.setItem(i,0,QTableWidgetItem(h['url']));history.setItem(i,1,QTableWidgetItem(history_date(h.get('date',''))))
         history.setEditTriggers(QAbstractItemView.NoEditTriggers);history.horizontalHeader().setStretchLastSection(True);history.setMinimumWidth(630);lay.addRow('주소 이력',history)
         def send():
             try:

@@ -75,7 +75,7 @@ class QueueDashboard(QDialog):
     def refresh(self):
         self.setProperty('theme',self.host.cfg.get('theme','white'));rows=self.host.queue.rows();ordered=sorted(rows,key=lambda r:(r['status'] not in ('running','paused'),-r.get('priority',0),r['id']));pages=max(1,(len(ordered)+24)//25);self.page=min(self.page,pages-1);visible=ordered[self.page*25:self.page*25+25];ids={r['id'] for r in visible};self.previous.setEnabled(self.page>0);self.next.setEnabled(self.page<pages-1);self.page_label.setText(f'{self.page+1} / {pages} · 전체 {len(rows)} 작품')
         if self.mode.currentIndex()==2:
-            visible=ordered[:5];ids={r['id'] for r in visible};self.previous.setEnabled(False);self.next.setEnabled(False);self.page_label.setText(f'상위 {len(visible)}개 · 전체 {len(rows)} 작품 · 상세 보기에서 전체 확인')
+            visible=[r for r in ordered if r['status'] not in ('complete','cancelled')][:5];ids={r['id'] for r in visible};self.previous.setEnabled(False);self.next.setEnabled(False);self.page_label.setText(f'상위 {len(visible)}개 · 전체 {len(rows)} 작품 · 상세 보기에서 전체 확인')
         for id in list(self.cards):
             if id not in ids:card=self.cards.pop(id);self.items.removeWidget(card);card.deleteLater()
         running=[r for r in rows if r['status']=='running'];rates=getattr(self.host,'queue_metrics',{})

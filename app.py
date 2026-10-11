@@ -1017,7 +1017,7 @@ class Window(QMainWindow):
         for widget,active in [(self.catalog_nav,not library),(self.library_nav,library)]:
             widget.setObjectName('activeNav' if active else 'nav');widget.style().unpolish(widget);widget.style().polish(widget)
     def apply_theme(self,value,persist=True):
-        value=themes.key(value);self.cfg['theme']=value;themes.apply(QApplication.instance(),value)
+        value=themes.key(value);self.cfg['theme']=value;self.setProperty('theme',value);themes.apply(QApplication.instance(),value)
         if getattr(self,'offline',None) is not None:self.offline.canvas.update()
         if persist:self.persist_settings()
     def show_catalog(self):

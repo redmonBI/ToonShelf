@@ -48,6 +48,8 @@ class UsabilityTests(unittest.TestCase):
         registry=SiteRegistry(self.root);a=registry.update({},'블랙툰','https://example.com');b=registry.update(a,'블랙툰','https://next.example.com',planned=['https://future.example.com']);self.assertEqual(len(registry.local()),1);self.assertEqual([h['url'] for h in b['history']],['https://example.com','https://next.example.com'])
         registry.cache_shared([{'name':'공유 사이트','url':'https://shared.example.com'}]);self.window.refresh_site_choices();self.window.site_choices.setCurrentIndex(1);self.assertEqual(self.window.url.text(),'https://next.example.com');self.window.url.setText('https://manual.example.com');self.assertEqual(self.window.read_cfg()['site_url'],'https://manual.example.com')
     def test_shared_address_edit_keeps_full_history(self):
+        from sites_ui import history_date
+        self.assertEqual(history_date('2026-10-11T01:00:00Z'),'2026-10-11 10:00')
         data=apply_request({},dict(action='site_add',name='Site',url='https://old.example.com'),'friend','owner',1,date='2026-10-10T01:00:00Z');data=apply_request(data,dict(action='site_edit',id='1',name='Site',url='https://new.example.com',planned_urls=['https://future.example.com']),'another_friend','owner',2,date='2026-10-11T01:00:00Z');site=data['sites'][0];self.assertEqual(site['url'],'https://new.example.com');self.assertEqual(len(site['history']),2);self.assertEqual(site['planned_urls'],['https://future.example.com'])
     def test_finder_adds_search_results_without_main_selection(self):
         from work_finder import WorkFinder
