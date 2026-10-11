@@ -1,13 +1,15 @@
-name: Build and publish Windows release
+name: Build and publish PC and Android
 on:
   workflow_dispatch:
 permissions:
   contents: write
+  pages: write
+  id-token: write
 concurrency:
   group: toonshelf-release
   cancel-in-progress: false
 jobs:
-  release:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,27 +17,134 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt pyinstaller
-      - name: Run tests without shutting down runner
+      - name: Validate PC functions without shutting down runner
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m unittest test_core test_library test_v3 test_reading test_appearance test_patch_update test_accounts test_collections test_progress test_integration test_account_profiles test_usability test_shelf_upgrade test_metadata_mobile -v
       - run: python bundle_opencomic.py
       - run: python -m PyInstaller --clean --noconfirm --distpath portable ToonShelf.spec
       - run: python package_v3.py
-      - name: Publish version and verified assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-release
+          path: |
+            ToonShelf_*_Windows.zip
+            SHA256SUMS.txt
+          retention-days: 7
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm test --prefix mobile
+      - run: unzip -q ToonShelf_Android_Source.zip
+      - name: Verify shared version and refresh bundled mobile UI
+        run: |
+          python - <<'PY'
+          import re, shutil
+          from pathlib import Path
+          from sharing import VERSION
+          build=Path('android_app/android/app/build.gradle').read_text()
+          assert re.search(r'versionName\s+"'+re.escape(VERSION)+'"',build), 'PC / APK version mismatch'
+          for p in Path('mobile').rglob('*'):
+            if p.is_file() and not any(x in ('tests','node_modules') for x in p.parts) and p.suffix.lower() in ('.html','.js','.css','.png','.svg','.webmanifest','.license'):
+              dest=Path('android_app/www')/p.relative_to('mobile');dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,dest)
+          PY
+      - run: npm ci --ignore-scripts --no-audit --no-fund && npx cap sync android
+        working-directory: android_app
+      - name: Build and verify signed APK
+        env:
+          TOONSHELF_KEYSTORE_BASE64: ${{ secrets.TOONSHELF_KEYSTORE_BASE64 }}
+          TOONSHELF_SIGNING_PASSWORD: ${{ secrets.TOONSHELF_SIGNING_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import base64,os
+          from pathlib import Path
+          if not os.environ.get('TOONSHELF_KEYSTORE_BASE64') or not os.environ.get('TOONSHELF_SIGNING_PASSWORD'):
+            raise SystemExit('Configure the private ToonShelf APK signing secrets before publishing.')
+          Path(os.environ['RUNNER_TEMP'],'toonshelf-release.jks').write_bytes(base64.b64decode(os.environ['TOONSHELF_KEYSTORE_BASE64'],validate=True))
+          PY
+          export TOONSHELF_KEYSTORE="$RUNNER_TEMP/toonshelf-release.jks"
+          cd android_app/android
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest lintRelease assembleRelease --no-daemon
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          cd ../..
+          python - <<'PY'
+          import hashlib,shutil
+          from pathlib import Path
+          from sharing import VERSION
+          p=Path(f'ToonShelf_{VERSION}_Android.apk');shutil.copyfile('android_app/android/app/build/outputs/apk/release/app-release.apk',p)
+          Path('AndroidSHA256.txt').write_text(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n')
+          PY
+      - name: Remove private signing copy
+        if: always()
+        run: rm -f "$RUNNER_TEMP/toonshelf-release.jks"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Android-release
+          path: |
+            ToonShelf_*_Android.apk
+            AndroidSHA256.txt
+            android_app/android/app/build/reports/
+          retention-days: 7
+  publish:
+    needs: [windows, android]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Windows-release
+          path: publish
+      - uses: actions/download-artifact@v4
+        with:
+          name: Android-release
+          path: android-artifacts
+      - name: Publish both platforms only after all checks passed
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
         run: |
-          $releaseVersion = python -c "from sharing import VERSION; print(VERSION)"
-          $knownReleases = gh release list --limit 100 --json tagName --repo "${{ github.repository }}" | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw 'Could not read releases' }
-          $sameVersion = @($knownReleases | Where-Object { $_.tagName -eq "v$releaseVersion" })
-          if ($sameVersion.Count -gt 0) {
-            gh release upload "v$releaseVersion" "ToonShelf_${releaseVersion}_Windows.zip" SHA256SUMS.txt --clobber --repo "${{ github.repository }}"
-            if ($LASTEXITCODE -ne 0) { throw 'Could not upload refreshed assets' }
-            gh release edit "v$releaseVersion" --notes-file RELEASE_NOTES.md --repo "${{ github.repository }}"
-          } else {
-            gh release create "v$releaseVersion" "ToonShelf_${releaseVersion}_Windows.zip" SHA256SUMS.txt --title "ToonShelf $releaseVersion" --notes-file RELEASE_NOTES.md --repo "${{ github.repository }}"
-          }
-          if ($LASTEXITCODE -ne 0) { throw 'Could not publish release' }
+          python - <<'PY'
+          import hashlib,shutil
+          from pathlib import Path
+          for p in Path('android-artifacts').rglob('ToonShelf_*_Android.apk'):shutil.copy2(p,Path('publish')/p.name)
+          for p in Path('android-artifacts').rglob('AndroidSHA256.txt'):
+            with Path('publish/SHA256SUMS.txt').open('a') as f:f.write(p.read_text())
+          for line in Path('publish/SHA256SUMS.txt').read_text().splitlines():
+            digest,name=line.split();assert hashlib.sha256((Path('publish')/name).read_bytes()).hexdigest()==digest
+          PY
+          version=$(python -c 'from sharing import VERSION;print(VERSION)')
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "v$version" publish/ToonShelf_*_Windows.zip publish/ToonShelf_*_Android.apk publish/SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "v$version" --notes-file RELEASE_NOTES.md --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "v$version" publish/ToonShelf_*_Windows.zip publish/ToonShelf_*_Android.apk publish/SHA256SUMS.txt --title "ToonShelf $version · PC + Android" --notes-file RELEASE_NOTES.md --repo "$GITHUB_REPOSITORY"
+          fi
+  mobile:
+    needs: [publish]
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - run: |
+          mkdir -p web/mobile/vendor
+          cp mobile/*.html mobile/*.js mobile/*.css mobile/*.webmanifest mobile/icon* web/mobile/
+          cp mobile/vendor/* web/mobile/vendor/
+          touch web/.nojekyll
+          printf '<meta http-equiv="refresh" content="0;url=mobile/">' > web/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

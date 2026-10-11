@@ -27,7 +27,7 @@ jobs:
         run: |
           mkdir -p web/mobile/vendor
           cp mobile/*.html mobile/*.js mobile/*.css mobile/*.webmanifest mobile/icon* web/mobile/
-          cp mobile/vendor/fflate.js mobile/vendor/fflate.LICENSE web/mobile/vendor/
+          cp mobile/vendor/* web/mobile/vendor/
           touch web/.nojekyll
           printf '<meta http-equiv="refresh" content="0;url=mobile/">' > web/index.html
       - uses: actions/upload-pages-artifact@v3
