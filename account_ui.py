@@ -76,6 +76,21 @@ class AccountDialog(QDialog):
             if callback and callback() is False:raise ValueError('진행 중인 작업이 끝난 뒤 계정을 변경하세요.')
             return True
         except Exception as exc:self.status.setText(str(exc));return False
+    def stage_for_switch(self):
+        service=getattr(self.host,'accounts_service',None)
+        return service.stage_pending() if service and hasattr(service,'stage_pending') else None
+    def flush_before_switch(self,staged):
+        service=getattr(self.host,'accounts_service',None)
+        return service.flush_pending(staged) if service and hasattr(service,'flush_pending') else ''
+    def apply_payload(self,payload):
+        from app_services import PendingConflict
+        try:self.host.account_apply(payload)
+        except PendingConflict:
+            box=QMessageBox(self);box.setWindowTitle('미전송 목록과 서버 목록');box.setText('이 PC에 아직 보내지 못한 변경사항이 있고, 서버 목록도 다른 기기에서 변경되었습니다. 사용할 목록을 선택하세요.');box.setInformativeText('이 PC 목록을 선택하면 다음 저장 때 서버에 반영합니다. 서버 목록을 선택해도 이 PC의 미전송 목록은 별도 보관 파일로 남깁니다.');local=box.addButton('이 PC의 변경사항 사용',QMessageBox.AcceptRole);server=box.addButton('서버 목록 사용',QMessageBox.DestructiveRole);box.addButton('나중에 선택',QMessageBox.RejectRole);box.exec()
+            if box.clickedButton() is local:choice='local'
+            elif box.clickedButton() is server:choice='server'
+            else:raise ValueError('목록 선택을 보류했습니다. 미전송 변경사항은 이 PC에 보관되어 있습니다.')
+            self.host.accounts_service.apply(payload,pending_choice=choice)
     def refresh(self):
         user=self.client.user or {};self.identity.setText(f"{user.get('display_name','로그인하지 않음')} · {user.get('username','')}");self.tabs.setTabVisible(self.admin_index,user.get('role')=='master')
         service=getattr(self.host,'accounts_service',None)
@@ -105,38 +120,58 @@ class AccountDialog(QDialog):
     def job_finished(self):self.progress.hide();self.tabs.setEnabled(True);self.refresh()
     def login(self):
         if not self.switch_allowed():return
-        try:self.client.connect(self.server.text())
+        try:
+            from account_client import endpoint
+            server=endpoint(self.server.text());staged=self.stage_for_switch()
         except Exception as exc:self.status.setText(str(exc));return
         name=self.username.text();password=self.password.text();remember=self.remember.isChecked();self.password.clear()
         def work():
+            self.flush_before_switch(staged);self.client.connect(server)
             self.client.login(name,password,remember);return {'snapshot':self.client.pull(),'config':self.client.config()}
         self.run(work,self.apply_login)
     def apply_login(self,data):
-        self.host.account_apply(data['snapshot']['payload'])
+        self.apply_payload(data['snapshot']['payload'])
         if hasattr(self.host,'account_apply_labels'):self.host.account_apply_labels(data['config']['payload'].get('menu_labels',{}))
         for key,field in self.label_fields.items():field.setText(data['config']['payload'].get('menu_labels',{}).get(key,''))
         self.tabs.setCurrentIndex(1)
     def register(self):
         if not self.switch_allowed():return
-        try:self.client.connect(self.server.text())
+        try:
+            from account_client import endpoint
+            server=endpoint(self.server.text());staged=self.stage_for_switch()
         except Exception as exc:self.status.setText(str(exc));return
-        name=self.username.text();password=self.password.text();display=self.display.text();consent=self.consent.isChecked();self.password.clear();self.run(lambda:self.client.register(name,password,display,consent),lambda _:self.status.setText('계정이 생성되었습니다. 로그인하세요.'))
+        name=self.username.text();password=self.password.text();display=self.display.text();consent=self.consent.isChecked();self.password.clear()
+        def work():self.flush_before_switch(staged);self.client.connect(server);return self.client.register(name,password,display,consent)
+        self.run(work,lambda _:self.status.setText('계정이 생성되었습니다. 로그인하세요.'))
     def logout(self):
         if not self.switch_allowed():return
+        try:staged=self.stage_for_switch()
+        except Exception as exc:self.status.setText(str(exc));return
         def work():
-            try:self.client.logout();return ''
-            except Exception as exc:return str(exc)+' 로컬 자동 로그인은 해제했습니다. 서버 세션은 연결 복구 후 별도로 해제하거나 만료까지 유지될 수 있습니다.'
+            warning=self.flush_before_switch(staged)
+            try:self.client.logout();return warning
+            except Exception as exc:return warning+' '+str(exc)+' 로컬 자동 로그인은 해제했습니다. 서버 세션은 연결 복구 후 별도로 해제하거나 만료까지 유지될 수 있습니다.'
         def done(warning):
             if hasattr(self.host,'account_signed_out'):self.host.account_signed_out()
             self.tabs.setCurrentIndex(0)
             if warning:self.status.setText(warning)
         self.run(work,done)
     def pull(self):
-        if self.switch_allowed():self.run(self.client.pull,lambda data:self.host.account_apply(data['payload']))
-    def push(self):
-        try:payload=self.host.account_snapshot()
+        if not self.switch_allowed():return
+        try:self.stage_for_switch()
         except Exception as exc:self.status.setText(str(exc));return
-        self.run(lambda:self.client.push(payload))
+        self.run(self.client.pull,lambda data:self.apply_payload(data['payload']))
+    def push(self):
+        try:payload=self.host.account_snapshot();staged=self.stage_for_switch()
+        except Exception as exc:self.status.setText(str(exc));return
+        def work():
+            service=getattr(self.host,'accounts_service',None)
+            if service and hasattr(service,'flush_pending'):
+                warning=self.flush_before_switch(staged)
+                if warning:raise ValueError(warning)
+                return {'saved':True}
+            return self.client.push(payload)
+        self.run(work)
     def import_local(self):
         if not self.switch_allowed():return
         try:

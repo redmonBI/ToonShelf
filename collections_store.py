@@ -77,6 +77,7 @@ class CollectionStore:
             validated.append((key,json.dumps(w,ensure_ascii=False),int(bool(e.get('favorite'))),day,str(e.get('genre','')),str(e.get('publisher',''))))
         with self.db() as db:
             db.execute('DELETE FROM collections');db.executemany('INSERT INTO collections VALUES(?,?,?,?,?,?)',validated)
+            db.execute('DELETE FROM episode_baselines');db.execute('DELETE FROM notices')
             for b in baselines:db.execute('INSERT OR REPLACE INTO episode_baselines VALUES(?,?,?)',(b['key'],b['identifiers'],b['checked']))
             for n in notices:db.execute('INSERT OR REPLACE INTO notices VALUES(?,?,?,?,?,?)',(n['id'],n['key'],json.dumps(n['work'],ensure_ascii=False),json.dumps(n['episode'],ensure_ascii=False),n['created'],int(bool(n['unread']))))
 

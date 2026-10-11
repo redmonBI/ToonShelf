@@ -33,6 +33,13 @@ class CollectionTests(unittest.TestCase):
         tuesday=store.claim_due(cfg,datetime(2026,10,13,11,tzinfo=SEOUL));self.assertEqual([i['work']['title'] for i in tuesday[0]['payload']],['B'])
     def test_auto_import_never_enables_cleanup(self):
         a=AutoStore(self.root/'auto.db');a.add([self.a]);a.update('/webtoon/a.html',weekday=4);a.save_schedule(dict(enabled=True,days=[4],time='10:00',scope='all',cleanup=True));b=AutoStore(self.root/'other-auto.db');b.import_data(a.export_data());self.assertEqual(b.entries()[0]['weekday'],4);self.assertFalse(b.schedule()['cleanup'])
+    def test_empty_snapshot_clears_notices_and_baselines(self):
+        one=Episode('1화','https://example.com/webtoons/1.html','',1,'1화');two=Episode('2화','https://example.com/webtoons/2.html','',2,'2화');self.s.update(self.a,favorite=True);self.s.observe(self.a,[one]);self.s.observe(self.a,[one,two]);self.assertEqual(self.s.unread_count(),1)
+        self.s.import_data({});self.assertEqual(self.s.entries(),[]);self.assertEqual(self.s.notices(),[])
+        with self.s.db() as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM episode_baselines').fetchone()[0],0)
+        self.assertEqual(self.s.observe(self.a,[one,two]),0)
+    def test_empty_auto_snapshot_disables_existing_cleanup_and_reservations(self):
+        auto=AutoStore(self.root/'auto.db');auto.add([self.a]);auto.save_schedule(dict(enabled=True,days=[0,1],time='10:00',scope='all',cleanup=True));auto.import_data({});self.assertEqual(auto.entries(),[]);self.assertFalse(auto.schedule()['cleanup']);self.assertFalse(auto.schedule()['enabled']);self.assertEqual(auto.schedule()['scope'],'selected')
     def test_check_updates_only_observes_successful_favorites_and_automatic(self):
         from collections_store import check_updates
         from core import Control

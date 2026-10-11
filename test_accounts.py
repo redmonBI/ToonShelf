@@ -121,4 +121,48 @@ class AccountTests(unittest.TestCase):
         dialog.history_page.setCurrentIndex(2);self.assertEqual(dialog.history_table.rowCount(),5);self.assertFalse(dialog.history_next.isEnabled());dialog.history_search.setText('travel');self.assertEqual(dialog.history_table.rowCount(),1);self.assertEqual(dialog.history_page.count(),1);self.assertEqual(dialog.history_table.item(0,0).text(),'Work 204')
         host.accounts_service.history=[];dialog.refresh();self.assertEqual(dialog.history_table.rowCount(),0);dialog.accept();host.close();app.processEvents()
 
+class PendingProfileTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import os
+        os.environ['TOONSHELF_TESTING']='1';os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
+        from PySide6.QtWidgets import QApplication
+        cls.qt=QApplication.instance() or QApplication([])
+    def setUp(self):
+        from PySide6.QtWidgets import QWidget,QLabel,QPushButton,QComboBox,QPlainTextEdit
+        from automation_store import AutoStore
+        from collections_store import CollectionStore
+        from queue_store import QueueStore
+        from app_services import AccountCoordinator
+        self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);self.host=QWidget();h=self.host;h.cfg={'theme':'white'};h.auto_store=AutoStore(self.root/'guest_auto.db');h.collection_store=CollectionStore(self.root/'guest_collection.db');h.queue=QueueStore(self.root/'guest_queue.db');h.queue_jobs={};h.job=h.auto_job=h.notification_job=None;h.batch_ids=set();h.selected=set();h.queue_metrics={};h.latest=QComboBox();h.latest.addItem('All',0);h.start=QPushButton();h.end=QPushButton();h.account_button=QPushButton();h.status=QLabel();h.logs=QPlainTextEdit()
+        h.apply_theme=lambda *a,**k:None;h.set_menu_compact=lambda *a:None;h.set_rules_hidden=lambda *a:None;h.apply_view_preferences=lambda:None;h.persist_settings=lambda:None;h.refresh_notifications=lambda:None;h.account_apply_labels=lambda _:None
+        self.service=AccountCoordinator(h,self.root);self.service.timer.stop();self.service.pending_timer.stop();self.service.client.user={'id':'pending-test-user','display_name':'Test'};self.service.client.revision=0;self.service.apply({'preferences':{'theme':'white'}})
+    def tearDown(self):
+        self.service.stop();self.host.close();self.qt.processEvents();self.temp.cleanup()
+    def dirty(self):self.host.cfg['theme']='dark';return self.service.stage_pending()
+    def test_close_checkpoint_and_same_revision_recovery(self):
+        self.host.cfg['theme']='dark';self.service.stop();self.assertTrue(self.service.pending_file().exists());self.service.client.clear_session();self.service.signed_out();self.service.client.user={'id':'pending-test-user','display_name':'Test'};self.service.client.revision=0;self.service.apply({'preferences':{'theme':'white'}});self.assertEqual(self.host.cfg['theme'],'dark');self.assertTrue(self.service.pending_file().exists());self.assertNotEqual(self.service.hash(self.service.snapshot()),self.service.last_hash)
+    def test_newer_server_preserves_pending_until_explicit_choice(self):
+        from app_services import PendingConflict
+        staged=self.dirty();self.service.client.revision=1
+        with self.assertRaises(PendingConflict):self.service.apply({'preferences':{'theme':'gray'}})
+        self.assertEqual(self.host.cfg['theme'],'dark');self.assertEqual(self.service.read_pending('pending-test-user')['base_revision'],0)
+        self.service.apply({'preferences':{'theme':'gray'}},pending_choice='server');self.assertEqual(self.host.cfg['theme'],'gray');self.assertFalse(self.service.pending_file().exists());backup=list(self.service.pending_file().parent.glob('pending_preserved_*.json'));self.assertEqual(len(backup),1);self.assertEqual(json.loads(backup[0].read_text(encoding='utf-8'))['payload'],staged['payload'])
+    def test_keep_local_rebases_only_after_explicit_choice(self):
+        self.dirty();self.service.client.revision=3;self.service.apply({'preferences':{'theme':'gray'}},pending_choice='local');self.assertEqual(self.host.cfg['theme'],'dark');self.assertEqual(self.service.read_pending('pending-test-user')['base_revision'],3)
+    def test_logout_flush_uses_original_revision_and_retains_failed_payload(self):
+        from unittest.mock import patch
+        staged=self.dirty();self.service.client.revision=7
+        with patch.object(self.service.client,'request',side_effect=AccountError('conflict',409)) as request:
+            warning=self.service.flush_pending(staged);self.assertTrue(warning);self.assertEqual(request.call_args.args[2]['revision'],0);self.assertTrue(self.service.pending_file().exists())
+        self.service.client.revision=0
+        with patch.object(self.service.client,'request',return_value={'revision':1}):self.assertEqual(self.service.flush_pending(staged),'')
+        self.assertFalse(self.service.pending_file().exists());self.assertEqual(self.service.last_hash,self.service.hash(staged['payload']))
+    def test_remote_already_has_uploaded_payload_acks_interrupted_upload(self):
+        staged=self.dirty();self.service.client.revision=1;self.service.apply(staged['payload']);self.assertFalse(self.service.pending_file().exists());self.assertEqual(self.host.cfg['theme'],'dark')
+    def test_stop_persistence_error_does_not_break_close(self):
+        from unittest.mock import patch
+        with patch.object(self.service,'stage_pending',side_effect=OSError('unwritable')):self.service.stop()
+        self.assertIn('unwritable',self.host.status.text())
+
 if __name__=='__main__':unittest.main()

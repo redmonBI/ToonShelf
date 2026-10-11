@@ -884,9 +884,9 @@ class Window(QMainWindow):
     def queue_tick(self):
         if getattr(self,'accounts_dialog_open',False) or self.accounts_service.busy():return
         if self.queue_running and not (self.auto_job and self.auto_job.isRunning()):
-            from urllib.parse import urlsplit
+            from core import safe_name
             from download_metrics import DownloadMetrics
-            def lease(row):return (str(Path(row['cfg']['output_dir']).resolve()),urlsplit(row['work']['url']).path)
+            def lease(row):return (str(Path(row['cfg']['output_dir']).resolve()).casefold(),safe_name(row['work']['title']).casefold())
             capacity=max(1,min(4,int(self.cfg.get('download_concurrency',2))))
             rows=self.queue.rows();busy={lease(r) for r in rows if r['id'] in self.queue_jobs}
             candidates=[r for r in rows if r['status']=='pending' and lease(r) not in busy]

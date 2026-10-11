@@ -68,7 +68,7 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertEqual([r['status'] for r in self.window.queue.rows()],['held','complete','complete'])
     def test_same_work_directory_lease_blocks_overlapping_ranges(self):
         first=self.add([Work('Same','https://one.example/work/1')],latest_count=1)[0]
-        second=self.add([Work('Same','https://two.example/work/1')],latest_count=10)[0]
+        second=self.add([Work('same','https://two.example/work/99')],latest_count=10)[0]
         other=self.add([Work('Other','https://one.example/work/2')],latest_count=10)[0]
         self.window.run_queue();self.assertEqual(set(self.window.queue_jobs),{first,other})
         self.assertEqual(next(r for r in self.window.queue.rows() if r['id']==second)['status'],'pending')

@@ -82,6 +82,9 @@ class AutoStore:
     def export_data(self):return dict(entries=self.entries(),schedule=self.schedule())
     def import_data(self,data):
         entries=data.get('entries',[])
+        schedule=dict(data.get('schedule') or dict(enabled=False,days=[0],time='21:00',scope='selected',activated=''),cleanup=False)
+        minute(schedule['time'])
+        if schedule['scope'] not in ('all','selected') or any(d not in range(7) for d in schedule['days']):raise ValueError('예약 설정을 확인하세요.')
         # Validate a snapshot before altering the local list.
         for e in entries:
             if e.get('category','watching') not in CATEGORIES or int(e.get('weekday',-1)) not in range(-1,7):raise ValueError('자동 목록 동기화 값을 확인하세요.')
@@ -92,7 +95,7 @@ class AutoStore:
             db.execute('DELETE FROM entries')
             for e in entries:db.execute('INSERT INTO entries(key,work,category,selected,tail,keep_count,delete_days,weekday) VALUES(?,?,?,?,?,?,?,?)',(urlsplit(e['work']['url']).path,json.dumps(e['work'],ensure_ascii=False),e.get('category','watching'),int(bool(e.get('selected',1))),int(e.get('tail',10)),int(e.get('keep_count',10)),int(e.get('delete_days',0)),int(e.get('weekday',-1))))
         # Imported destructive cleanup is deliberately not enabled on another PC.
-        if 'schedule' in data:self.save_schedule(dict(data['schedule'],cleanup=False))
+        self.save_schedule(schedule)
     def mark(self,slot,status,detail):
         with self.db() as db:db.execute('UPDATE runs SET status=?,detail=? WHERE slot=?',(status,str(detail),slot))
     def log(self,detail,status='complete'):
