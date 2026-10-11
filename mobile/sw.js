@@ -1,5 +1,5 @@
-const CACHE='toonshelf-mobile-3.6.0';
-const ASSETS=['./','./index.html','./app.js','./model.js','./storage.js','./style.css','./zip-worker.js','./vendor/fflate.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
+const CACHE='toonshelf-mobile-3.7.0';
+const ASSETS=['./','./index.html','./app.js','./model.js','./storage.js','./style.css','./zip-worker.js','./desktop-features.js','./native.js','./folder-model.js','./vendor/fflate.js','./vendor/capacitor.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('toonshelf-mobile-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('message',event=>{if(event.data==='activate')self.skipWaiting()});
