@@ -1,4 +1,4 @@
-# ToonShelf Android 3.7.0
+# ToonShelf Android 3.7.1
 
 Android 스마트폰·태블릿에 Android APK를 설치합니다. Chrome 설치나 웹 페이지를 항상 열어둘 필요가 없습니다. 화면·뷰어 파일은 APK에 포함되며 화면 크기에 따라 자동 배치합니다. Android 8 이상이 대상입니다.
 
