@@ -1,3 +1,7 @@
+# ToonShelf 3.7.1 · Android 다운로드 수정
+
+회차·본문 이미지 목록의 화면 표시를 기다려 읽도록 수정했습니다. 저장 폴더 권한을 다운로드 전에 확인하고 실패 원인을 모든 진행 표시에서 제공합니다. 기존 APK에서 업데이트하면 목록·설정·연결 폴더를 유지합니다. [최신 PC·Android 배포](https://github.com/redmonBI/ToonShelf/releases/latest)
+
 # ToonShelf 3.7.0
 
 Android 스마트폰·태블릿 **설치형 APK**와 PC 패치를 같은 버전으로 제공합니다. [최신 배포](https://github.com/redmonBI/ToonShelf/releases/latest)에서 Android APK 또는 Windows ZIP을 선택하세요.
