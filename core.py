@@ -279,10 +279,10 @@ class Browser:
         except Exception as exc:
             raise RuntimeError('목록/본문이 로딩되지 않았습니다. 사이트 주소 또는 선택자 설정을 확인하세요. 보안 확인 화면은 직접 확인해야 합니다.') from exc
         # Settle asynchronous batches without assuming only the visible cards exist.
-        last, stable = 0, 0
-        for _ in range(12):
+        last, stable = None, 0
+        for _ in range(40):
             self.control.check()
-            count = self.page.locator(selector).count()
+            count = self.page.locator(selector).evaluate_all('(nodes)=>nodes.map(n=>n.getAttribute("data-original")||n.getAttribute("data-src")||n.getAttribute("src")||n.getAttribute("href")||n.textContent).join("\\n")')
             stable = stable + 1 if count == last else 0
             if stable >= 3:
                 break
@@ -490,6 +490,7 @@ def download(cfg, works, control, emit):
                                 emit('saved', {'path': str(path), 'bytes': len(data)})
                             else:
                                 totals['filtered'] += 1
+                                archive.filter_image(work,episode,url)
                         except Cancelled:
                             raise
                         except PermissionError as exc:
@@ -527,4 +528,7 @@ def download(cfg, works, control, emit):
                 emit('log', f'{work.title} / {episode.folder}: 신규 {episode_saved}장' + (f' · 오류 {len(errors)}건' if errors else ''))
             return totals
     finally:
+        for work in works:
+            try:archive.manifest(archive.work_key(work))
+            except Exception as exc:emit('log',f'순서 기록 저장 확인 필요: {exc}')
         archive.close()

@@ -343,7 +343,10 @@ class LibraryDialog(QDialog):
             message=f"저장 위치: {result['path']}\n원본: {size_text(result['source_bytes'])}\n내보내기 결과: {size_text(result['output_bytes'])}\n{result['episode_count']}회차 · {result['image_count']}장"
             QMessageBox.information(self,'기기용 내보내기 완료',message)
         elif state=='success':
-            self.activity.setText('업로드일과 이미지 순서를 확인했습니다.');self.refresh()
+            unmatched=result.get('unmatched',[]) if isinstance(result,dict) else []
+            self.activity.setText(f"사이트 순서 확인 {result.get('checked',0)}회차 · 미매칭 {len(unmatched)}회차" if isinstance(result,dict) else '이미지 순서를 확인했습니다.')
+            if unmatched:QMessageBox.information(self,'순서 확인 결과','\n'.join(unmatched[:12])+'\n미매칭 회차의 원본과 순서는 유지했습니다.')
+            self.refresh()
         elif state=='cancelled':self.activity.setText('작업이 중단되었습니다. 내보내던 임시 사본은 정리했습니다.')
         else:
             self.activity.setText(result);QMessageBox.warning(self,'작업 확인',result)

@@ -15,9 +15,17 @@ def natural(value):
     return tuple((0,int(x)) if x.isdigit() else (1,x.casefold()) for x in re.split(r'(\d+)',str(value)))
 
 def local_path(root, value):
+    if not value:raise ValueError('이 위치의 이미지가 아직 다운로드되지 않았습니다.')
     root=Path(root).resolve();p=(root/value).resolve()
     if not p.is_relative_to(root):raise ValueError('보관함 밖의 파일은 열 수 없습니다.')
     return p
+
+def ordered_files(chapter):
+    files=list(chapter.get('files',[]))
+    positions=[int(f.get('position',0)) for f in files]
+    if not positions or all(p>0 for p in positions) and len(set(positions))==len(positions):
+        return sorted(files,key=lambda f:int(f.get('position',0)))
+    raise ValueError('이미지 순서 기록이 중복되거나 없습니다. 날짜·읽는 순서 확인을 실행하세요.')
 
 def shelf_index(root, catalog, control, emit, thumbnails=True):
     root=Path(root).resolve()
@@ -34,7 +42,7 @@ def shelf_index(root, catalog, control, emit, thumbnails=True):
                 emit('log',f"보관함 확인 중 · {n+1}/{len(rows)} 작품");continue
             cover=Path(w.get('cover') or '')
             if not cover.is_file():
-                first=next((f for e in w['chapters'] for f in e['files']),None)
+                first=next((f for e in w['chapters'] for f in e['files'] if f.get('path')),None)
                 cover=local_path(root,first['path']) if first else None
             if cover:
                 reader=QImageReader(str(cover));s=reader.size()
@@ -49,9 +57,7 @@ def shelf_index(root, catalog, control, emit, thumbnails=True):
 def chapter_images(root, chapter, control):
     result=[]
     # Recorded positions, rather than original file names, determine reading order.
-    files=chapter['files']
-    if not chapter.get('order_verified'):
-        files=sorted(files,key=lambda f:natural(f['path']))
+    files=ordered_files(chapter)
     for f in files:
         control.check()
         try:
@@ -79,7 +85,7 @@ def prepare_opencomic(root, work, control, emit):
         folder=(cache/f"{n+1:04d}_{safe_name(e['folder'])}").resolve()
         if not folder.is_relative_to(cache):raise ValueError('읽기용 회차 경로를 확인하세요.')
         folder.mkdir(exist_ok=True);paths.append(str(folder));expected=set()
-        files=e['files'] if e.get('order_verified') else sorted(e['files'],key=lambda f:natural(f['path']))
+        files=ordered_files(e)
         for i,f in enumerate(files):
             control.check();src=local_path(root,f['path'])
             if not src.is_file():continue

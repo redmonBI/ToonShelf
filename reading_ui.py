@@ -41,8 +41,10 @@ class ComicCanvas(QWidget):
     def configure(self,items,width):
         self.generation+=1;self.items=items;self.width_read=width;self.cache.clear();self.cache_bytes=0;self.errors={}
         self.offsets=[0]
-        for item in items:self.offsets.append(self.offsets[-1]+max(80,round(width*item['height']/item['width'])))
-        self.setMinimumHeight(min(16_000_000,self.offsets[-1] or 1));self.resize(max(width,self.scroll.viewport().width()),self.minimumHeight());self.update();self.ensure_visible()
+        for item in items:self.offsets.append(self.offsets[-1]+max(1,round(width*item['height']/item['width'])))
+        if self.offsets[-1]>16_000_000:
+            self.items=[{'path':'','width':800,'height':160,'error':'한 회차 표시 길이가 너무 깁니다. 읽기 폭을 줄이거나 OpenComic으로 열어주세요.'}];self.offsets=[0,160]
+        self.setMinimumHeight(self.offsets[-1] or 1);self.resize(max(width,self.scroll.viewport().width()),self.minimumHeight());self.update();self.ensure_visible()
     def ensure_visible(self):
         top=self.scroll.verticalScrollBar().value();bottom=top+self.scroll.viewport().height()+500
         start=max(0,bisect_right(self.offsets,max(0,top-500))-1);wanted=range(start,min(len(self.items),bisect_right(self.offsets,bottom)))
@@ -92,6 +94,7 @@ class OfflineLibrary(QWidget):
         from notifications_ui import CollectionFilters
         self.collection_filters=CollectionFilters(self.filter);sl.addWidget(self.collection_filters)
         daytools=QHBoxLayout();self.today=QCheckBox('오늘 요일 자동 검색');self.today.toggled.connect(self.today_changed);daytools.addWidget(self.today);daytools.addWidget(btn('사이트 정보 검색·매칭',self.find_weekdays));daytools.addWidget(btn('검색 중단',self.cancel_lookup));daytools.addWidget(btn('스마트폰·패드 앱',self.mobile_app));daytools.addStretch();sl.addLayout(daytools)
+        ordertools=QHBoxLayout();ordertools.addWidget(btn('폴더 이동용 순서 기록 저장',self.publish_orders));ordertools.addWidget(btn('사이트 읽는 순서 다시 맞추기',self.verify_orders));ordertools.addStretch();sl.addLayout(ordertools)
         self.scope_tabs=QTabBar();self.scope_tabs.setExpanding(False)
         for name in ['전체','내 웹툰 · 최근 회차','전회차 보관','일부 회차','다운로드 전']:self.scope_tabs.addTab(name)
         self.scope_tabs.currentChanged.connect(self.filter);sl.addWidget(self.scope_tabs)
@@ -210,6 +213,15 @@ class OfflineLibrary(QWidget):
     def mobile_app(self):
         from mobile_ui import MobileDialog
         MobileDialog(self.host).exec()
+    def publish_orders(self):
+        from library import publish_recorded_orders
+        def done(value):
+            self.status.setText(f"순서 기록 저장 {value['written']}회차 · 사이트 재확인 필요 {len(value['ambiguous'])}회차")
+            QMessageBox.information(self,'폴더 이동 준비',self.status.text()+'\n작품 폴더를 옮길 때 _reading_order.json도 함께 복사하세요. 원본 파일명과 이미지는 유지됩니다.')
+        self.run(lambda c,e:publish_recorded_orders(self.root,c,e),done)
+    def verify_orders(self):
+        from library_ui import LibraryDialog
+        LibraryDialog(self.host).exec()
     def filter(self):
         if getattr(self,'restoring_filters',False):return
         self.page=0;self.render()
@@ -281,7 +293,7 @@ class OfflineLibrary(QWidget):
         pos=self.host.cfg.get('reading_positions',{}).get(self.work['key'],{});fraction=pos.get('offsets',{}).get(chapter['key'],pos.get('fraction',0) if pos.get('chapter')==chapter['key'] else 0)
         self.images=[];self.restore_fraction=fraction;self.canvas.configure([],850)
         def loaded(images):
-            self.images=images;self.apply_width();self.status.setText(self.work['title']+' · '+chapter['folder']+f' · {len(images)}장'+(' · 이전 자료: 파일명 숫자순' if not chapter.get('order_verified') else ''))
+            self.images=images;self.apply_width();self.status.setText(self.work['title']+' · '+chapter['folder']+f' · {len(images)}장'+(' · 다운로드 기록 순서 · 사이트 미확인' if not chapter.get('order_verified') else ' · 사이트 순서'))
             QTimer.singleShot(0,self.restore_scroll)
         self.run(lambda c,e:chapter_images(self.root,chapter,c),loaded)
     def resize_reading(self):self.resize_timer.start(180)

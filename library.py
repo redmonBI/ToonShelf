@@ -91,6 +91,10 @@ class LibraryArchive(Archive):
                 first_downloaded=COALESCE((SELECT MIN(saved) FROM images WHERE episode_key=episodes.key),''),
                 last_downloaded=COALESCE((SELECT MAX(last_downloaded) FROM images WHERE episode_key=episodes.key),'')''')
         self.db.execute('CREATE INDEX IF NOT EXISTS image_episode_idx ON images(episode_key,position)')
+        self.db.execute('''CREATE TABLE IF NOT EXISTS reading_plan (
+            episode_key TEXT NOT NULL, position INT NOT NULL, image_key TEXT NOT NULL,
+            url TEXT NOT NULL, filtered INT NOT NULL DEFAULT 0,
+            PRIMARY KEY(episode_key,position))''')
         self.db.commit()
 
     def record_plan(self,work,episodes,cfg):
@@ -135,9 +139,19 @@ class LibraryArchive(Archive):
     def record_order(self, work, episode, urls):
         from urllib.parse import urlsplit
         episode_key = self.work_key(work)+'|'+urlsplit(episode.url).path
-        for position, url in enumerate(urls, 1):
-            self.db.execute('UPDATE images SET position=? WHERE key=?', (position, self.key(work, episode, url)))
-        self.db.execute('UPDATE episodes SET order_verified=1 WHERE key=?', (episode_key,))
+        if not urls:raise ValueError('빈 이미지 순서는 저장할 수 없습니다.')
+        # Publish the complete source snapshot in one transaction before any transfer.
+        # Old assets remain on disk/in the archive, but cannot leak into a new plan.
+        with self.db:
+            self.db.execute('DELETE FROM reading_plan WHERE episode_key=?',(episode_key,))
+            for position, url in enumerate(urls, 1):
+                image_key=self.key(work,episode,url)
+                self.db.execute('INSERT INTO reading_plan VALUES(?,?,?,?,0)',(episode_key,position,image_key,url))
+                self.db.execute('UPDATE images SET position=? WHERE key=?', (position, image_key))
+            self.db.execute('UPDATE episodes SET order_verified=1 WHERE key=?', (episode_key,))
+
+    def filter_image(self,work,episode,url):
+        self.db.execute('UPDATE reading_plan SET filtered=1 WHERE image_key=?',(self.key(work,episode,url),))
         self.db.commit()
 
     def save(self, work, episode, url, data, minimum, position=1):
@@ -216,15 +230,50 @@ class LibraryArchive(Archive):
         return rows
 
     def ordered_images(self, episode_key):
-        return [dict(row) for row in self.db.execute('SELECT * FROM images WHERE episode_key=? ORDER BY position,key',(episode_key,))]
+        if self.db.execute('SELECT 1 FROM reading_plan WHERE episode_key=?',(episode_key,)).fetchone():
+            rows=self.db.execute('''SELECT i.*,p.position AS plan_position,p.image_key,p.url AS source_url
+                FROM reading_plan p LEFT JOIN images i ON i.key=p.image_key
+                WHERE p.episode_key=? AND p.filtered=0 ORDER BY p.position''',(episode_key,))
+            return [{**dict(r),'position':r['plan_position'],
+                     'path':r['path'] or '', 'key':r['key'] or r['image_key'],
+                     'missing_source':not bool(r['path'])} for r in rows]
+        # The old downloader inserted sequentially. Never substitute random file names.
+        return [dict(row) for row in self.db.execute('SELECT * FROM images WHERE episode_key=? ORDER BY position,rowid',(episode_key,))]
+
+    def portable_order(self,work,episode,images):
+        from reading import ordered_files
+        files=ordered_files({**episode,'files':images})
+        available=[f for f in files if f.get('path')]
+        if not available:return
+        parents={Path(f['path']).parent for f in available}
+        if len(parents)!=1:raise ValueError('회차 파일이 여러 폴더에 있어 순서 기록을 만들 수 없습니다.')
+        parent=(self.root/next(iter(parents))).resolve()
+        if not parent.is_relative_to(self.root):raise ValueError('보관함 밖에 순서 기록을 쓸 수 없습니다.')
+        if not parent.is_dir():raise ValueError('회차 폴더를 찾지 못했습니다.')
+        payload={'version':3,'work':work['title'],'work_key':work['key'],'work_url':work['url'],
+                 'genre':work['genre'],'publisher':work['publisher'],'weekdays':work.get('weekdays',[]),
+                 'episode':episode['folder'],'episode_key':episode['key'],'sequence':episode['sequence'],
+                 'upload_date':episode['upload_date'],'downloaded':episode['last_downloaded'],
+                 'order_verified':bool(episode['order_verified']),
+                 'order_source':'site' if episode['order_verified'] else 'download_record',
+                 'expected_episode_keys':work.get('expected_episode_keys',[]),
+                 'images':[{'file':Path(f['path']).name if f['path'] else '', 'position':f['position'],
+                            'source_key':f['key'],'source_url':f.get('source_url',''),
+                            'sha256':f.get('sha',''),'missing':bool(f.get('missing_source'))} for f in files]}
+        target=parent/'_reading_order.json';tmp=target.with_suffix('.json.part')
+        tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2),encoding='utf-8');tmp.replace(target)
 
     def manifest(self, work_key):
-        work = next((w for w in self.works() if w['key']==work_key), None)
+        work = next((w for w in self.works(verify_files=False) if w['key']==work_key), None)
         if not work:
             return
         payload = {'version':2, 'work':work, 'episodes':[]}
-        for e in self.episodes(work_key):
-            payload['episodes'].append({**e,'images_in_reading_order':self.ordered_images(e['key'])})
+        for e in self.episodes(work_key,verify_files=False):
+            images=self.ordered_images(e['key'])
+            payload['episodes'].append({**e,'images_in_reading_order':images})
+            # Ambiguous legacy positions are reported by repair, never guessed here.
+            try:self.portable_order(work,e,images)
+            except ValueError:pass
         path = self.root / safe_name(work['title']) / '_toonshelf_manifest.json'
         path.parent.mkdir(parents=True,exist_ok=True)
         temp = path.with_suffix('.json.part')
@@ -235,7 +284,9 @@ class LibraryArchive(Archive):
 def refresh_metadata(cfg, root, keys, catalog, control, emit):
     archive = LibraryArchive(Path(root))
     try:
+        backup_order_metadata(archive,control,emit)
         archive.seed_catalog(catalog)
+        checked=0;failures=[]
         with Browser(cfg,control,emit) as browser:
             from urllib.parse import urlsplit,urlunsplit
             host = urlsplit(cfg['site_url'])
@@ -252,21 +303,78 @@ def refresh_metadata(cfg, root, keys, catalog, control, emit):
                     ekey = key+'|'+urlsplit(e.url).path
                     if ekey not in saved:
                         continue
-                    archive.record_episode(work,e,sequence)
                     html = browser.visit(e.url,cfg['image_selector'])
                     urls = parse_images(html,e.url,cfg['image_selector'])
                     if not urls:
                         raise RuntimeError(f'{e.folder}: 이미지 순서를 확인하지 못했습니다.')
                     available = {urlsplit(u).path for u in urls}
-                    missing = [r for r in archive.ordered_images(ekey) if r['key'].split('|',2)[-1] not in available]
-                    if missing:
-                        raise RuntimeError(f'{e.folder}: 기존 파일 {len(missing)}장의 원본 주소가 달라 순서를 확인하지 못했습니다.')
+                    # Every current source must map to an existing, intact asset. Extra
+                    # old assets are kept, but are no longer included in the reading plan.
+                    assets={r['key']:dict(r) for r in archive.db.execute('SELECT * FROM images WHERE episode_key=?',(ekey,))}
+                    stale=[r for r in assets.values() if r['key'].split('|',2)[-1] not in available]
+                    missing=[u for u in urls if archive.key(work,e,u) not in assets]
+                    if stale:
+                        failures.append(f'{work.title} / {e.folder}: 기존 이미지 {len(stale)}장 원본 주소 미매칭 · 기존 순서 유지')
+                        emit('log',failures[-1]);continue
+                    corrupt=[]
+                    for u in urls:
+                        control.check();r=assets.get(archive.key(work,e,u))
+                        if not r:continue
+                        p=(archive.root/r['path']).resolve()
+                        if not p.is_relative_to(archive.root) or not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=r['sha']:corrupt.append(r['path'])
+                    if corrupt:
+                        failures.append(f'{work.title} / {e.folder}: 누락·손상 {len(corrupt)}장 · 기존 순서 유지');emit('log',failures[-1]);continue
+                    archive.record_episode(work,e,sequence)
                     archive.record_order(work,e,urls)
+                    if missing:archive.episode_status(work,e,'partial',f'사이트 순서 확인 · 다운로드 누락 {len(missing)}장')
+                    checked+=1
                     emit('log',f'{work.title} / {e.folder}: 업로드일 {e.date or "미확인"} · 읽는 순서 확인')
                 archive.manifest(key)
-        return {'works':len(keys)}
+        return {'works':len(keys),'checked':checked,'unmatched':failures}
     finally:
         archive.close()
+
+def publish_recorded_orders(root,control,emit):
+    """Offline portable migration: preserve assets, never claim site verification."""
+    archive=LibraryArchive(root);written=0;ambiguous=[]
+    try:
+        backup_order_metadata(archive,control,emit)
+        from reading import ordered_files
+        for w in archive.works(verify_files=False):
+            for e in archive.episodes(w['key'],verify_files=False):
+                control.check();images=archive.ordered_images(e['key'])
+                try:
+                    ordered_files({**e,'files':images});archive.portable_order(w,e,images);written+=1
+                except ValueError:ambiguous.append({'work':w['title'],'episode':e['folder'],'key':e['key']})
+            emit('log',f"순서 기록 전달 준비 · {w['title']} · {written}회차")
+        return {'written':written,'ambiguous':ambiguous}
+    finally:archive.close()
+
+def backup_order_metadata(archive,control,emit):
+    """One recoverable metadata snapshot; no copies of comic images."""
+    import tempfile
+    from zipfile import ZIP_DEFLATED
+    directory=archive.root/'.toonshelf-order-backup';directory.mkdir(exist_ok=True)
+    target=directory/'before-repair.zip';stage=directory/'before-repair.zip.part'
+    emit('log','순서 기록 백업 중 · 원본 이미지는 복사하지 않습니다.')
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            dbpath=Path(tmp)/'.toonshelf.sqlite3';backup=sqlite3.connect(dbpath)
+            try:archive.db.backup(backup)
+            finally:backup.close()
+            with ZipFile(stage,'w',ZIP_DEFLATED) as z:
+                z.write(dbpath,'.toonshelf.sqlite3')
+                paths=set()
+                for row in archive.db.execute('SELECT DISTINCT path FROM images'):
+                    control.check();parent=Path(row['path']).parent
+                    paths.add(parent/'_reading_order.json');paths.add(parent.parent/'_toonshelf_manifest.json')
+                for relative in paths:
+                    control.check();p=(archive.root/relative).resolve()
+                    if p.is_relative_to(archive.root) and p.is_file():z.write(p,str(relative))
+        stage.replace(target)
+    finally:
+        if stage.exists():stage.unlink()
+    return str(target)
 
 
 def export_mobile(root, keys, destination, options, control, emit):
@@ -290,7 +398,8 @@ def export_mobile(root, keys, destination, options, control, emit):
                     raise ValueError(f"{w['title']} / {e['folder']}: ‘날짜·읽는 순서 확인’을 먼저 실행하세요.")
                 if e['status']!='complete':
                     raise ValueError(f"{e['folder']}: 회차 다운로드를 완료한 뒤 내보내세요.")
-                images=archive.ordered_images(e['key'])
+                from reading import ordered_files
+                images=ordered_files({**e,'files':archive.ordered_images(e['key'])})
                 for i in images:
                     path=(root/i['path']).resolve()
                     if not path.is_relative_to(root) or not path.is_file():

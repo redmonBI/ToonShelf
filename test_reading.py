@@ -30,11 +30,11 @@ class ReadingTests(unittest.TestCase):
             self.assertEqual((Path(paths[0])/'000001.png').read_bytes(),(root/'10.png').read_bytes())
             self.assertEqual(prepare_opencomic(root,work,Control(),lambda *a:None),paths)
             self.assertEqual(before,{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in root.glob('*.png')})
-    def test_corrupt_image_is_reported_and_unverified_uses_numeric_names(self):
+    def test_legacy_recorded_order_beats_random_names_and_reports_corruption(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);work=self.fixture(root);e=work['chapters'][0];e['order_verified']=0
-            rows=chapter_images(root,e,Control());self.assertEqual(Path(rows[0]['path']).name,'2.png')
-            (root/'2.png').write_bytes(b'broken');rows=chapter_images(root,e,Control());self.assertTrue(rows[0]['error'])
+            rows=chapter_images(root,e,Control());self.assertEqual(Path(rows[0]['path']).name,'10.png')
+            (root/'2.png').write_bytes(b'broken');rows=chapter_images(root,e,Control());self.assertTrue(rows[1]['error'])
             with self.assertRaises(ValueError):local_path(root,'../escape.png')
     def test_metrics_pause_excluded_and_estimates_need_samples(self):
         now=[0.];m=DownloadMetrics(lambda:now[0]);self.assertIsNone(m.snapshot()['remaining'])

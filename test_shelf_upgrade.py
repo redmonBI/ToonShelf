@@ -77,7 +77,7 @@ class ShelfUiTests(unittest.TestCase):
         self.pump(self.pane.shutdown);self.host.close();self.qt.processEvents();self.host.deleteLater();QCoreApplication.sendPostedEvents(None,QEvent.DeferredDelete);self.qt.processEvents();self.state.stop();self.tmp.cleanup()
     def row(self):
         file=self.root/'demo.png';Image.new('RGB',(200,900),'blue').save(file)
-        chapters=[dict(key=str(i),folder=f'{i}화',files=[dict(path='demo.png')],order_verified=1,status='complete',images=1,missing=0) for i in (1,2)]
+        chapters=[dict(key=str(i),folder=f'{i}화',files=[dict(path='demo.png',position=1)],order_verified=1,status='complete',images=1,missing=0) for i in (1,2)]
         return dict(title='Demo',url='https://example.com/demo',key='/demo',genre='Fantasy',publisher='Demo',chapters=chapters,episodes=2,size=100,images=2,last_downloaded='',weekday=2,expected_episode_keys=['1','2'])
     def test_weekday_scope_tabs_and_today_automatically_filter(self):
         self.pane.rows=[self.row(),dict(self.row(),title='Recent',url='https://example.com/recent',expected_episode_keys=['1','2','3'],latest_count=10,weekday=4)];self.pane.scope_tabs.setCurrentIndex(1);self.assertEqual([r['title'] for r in self.pane.filtered()],['Recent']);self.pane.scope_tabs.setCurrentIndex(2);self.assertEqual([r['title'] for r in self.pane.filtered()],['Demo'])

@@ -17,6 +17,26 @@ def picture(color,size=(200,300)):
 
 
 class LibraryTests(unittest.TestCase):
+    def test_source_plan_replaces_stale_assets_and_keeps_missing_positions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a,w,e,urls=self.fixture(Path(tmp));key=a.work_key(w)+'|/webtoons/1/10.html'
+            original=(Path(tmp)/'검증 작품/1화/z.png').read_bytes()
+            a.record_order(w,e,[urls[1],'https://image.test/missing.png'])
+            rows=a.ordered_images(key)
+            self.assertEqual([r['position'] for r in rows],[1,2]);self.assertTrue(rows[0]['path'].endswith('a.png'));self.assertTrue(rows[1]['missing_source'])
+            self.assertEqual((Path(tmp)/'검증 작품/1화/z.png').read_bytes(),original)
+            a.manifest(a.work_key(w));meta=json.loads((Path(tmp)/'검증 작품/1화/_reading_order.json').read_text(encoding='utf-8'))
+            self.assertEqual(meta['images'][0]['file'],'a.png');self.assertTrue(meta['images'][1]['missing']);a.close()
+
+    def test_portable_legacy_order_keeps_records_and_rejects_duplicate_positions(self):
+        from library import publish_recorded_orders
+        from reading import ordered_files
+        with tempfile.TemporaryDirectory() as tmp:
+            a,w,e,urls=self.fixture(Path(tmp));a.db.execute('DELETE FROM reading_plan');a.db.execute('UPDATE episodes SET order_verified=0');a.db.commit();a.close()
+            report=publish_recorded_orders(Path(tmp),Control(),lambda *a:None);self.assertEqual(report['written'],1)
+            meta=json.loads((Path(tmp)/'검증 작품/1화/_reading_order.json').read_text(encoding='utf-8'));self.assertFalse(meta['order_verified']);self.assertEqual([i['file'] for i in meta['images']],['z.png','a.png'])
+            with self.assertRaises(ValueError):ordered_files({'files':[{'position':1},{'position':1}]})
+
     def fixture(self,root):
         a=LibraryArchive(root)
         w=Work('검증 작품','https://example.com/webtoon/1.html',genre='판타지 액션',publisher='네이버')
