@@ -251,7 +251,8 @@ class LibraryArchive(Archive):
         if not parent.is_relative_to(self.root):raise ValueError('보관함 밖에 순서 기록을 쓸 수 없습니다.')
         if not parent.is_dir():raise ValueError('회차 폴더를 찾지 못했습니다.')
         payload={'version':3,'work':work['title'],'work_key':work['key'],'work_url':work['url'],
-                 'genre':work['genre'],'publisher':work['publisher'],'weekdays':work.get('weekdays',[]),
+                 'genre':work['genre'],'publisher':work['publisher'],
+                 'weekdays':work.get('weekdays') or ([work['weekday']] if work.get('weekday',-1)>=0 else []),
                  'episode':episode['folder'],'episode_key':episode['key'],'sequence':episode['sequence'],
                  'upload_date':episode['upload_date'],'downloaded':episode['last_downloaded'],
                  'order_verified':bool(episode['order_verified']),
