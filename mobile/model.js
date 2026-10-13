@@ -28,4 +28,11 @@ export function validateSnapshot(value){
  return p;
 }
 export function natural(a,b){return a.localeCompare(b,'ko',{numeric:true,sensitivity:'base'})}
+export function recorded(a,an,b,bn){const x=Number(a)>0?Number(a):Infinity,y=Number(b)>0?Number(b):Infinity;return x===y?natural(an,bn):x<y?-1:1}
+export function orderedImages(files,meta){
+ if(!Array.isArray(meta.images)||!meta.images.length)return files.slice().sort((a,b)=>natural(a.name,b.name));
+ const byName=new Map(files.map(f=>[f.name,f])),seen=new Set(),names=new Set();
+ const plan=meta.images.filter(e=>!e.filtered).slice().sort((a,b)=>Number(a.position)-Number(b.position));
+ return plan.map((entry,i)=>{const p=Number(entry.position??i+1),name=entry.file;if(!(p>0)||seen.has(p)||names.has(name)||!name||name.includes('/')||name.includes('\\'))throw Error('이미지 순서 기록이 중복되거나 잘못됐습니다. PC에서 순서를 확인하세요.');seen.add(p);names.add(name);const f=byName.get(name);if(!f)throw Error('순서 기록의 이미지가 없습니다: '+name);return f});
+}
 export function bytes(n){for(const unit of ['B','KB','MB','GB']){if(n<1024||unit==='GB')return n.toFixed(1)+' '+unit;n/=1024}}
