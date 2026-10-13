@@ -1,3 +1,7 @@
+# ToonShelf 3.7.3 · PC와 APK 읽는 순서 복구
+
+회차별 순서 기록을 통합해 전체 대표 폴더와 작품 폴더 단위 이동에서 같은 순서로 읽습니다. PC 라이브러리의 **폴더 이동용 순서 기록 저장**으로 만든 `_reading_order.json`을 이미지와 함께 옮긴 뒤 앱에서 폴더를 새로고침하세요. [최신 PC 패치·Android APK](https://github.com/redmonBI/ToonShelf/releases/latest)
+
 # ToonShelf 3.7.2 · 읽는 순서 복구
 
 PC 라이브러리의 **폴더 이동용 순서 기록 저장**으로 회차별 `_reading_order.json`을 준비하고 작품 폴더와 함께 옮기세요. PC·APK는 파일명 대신 같은 순서 기록을 읽습니다. **사이트 순서 다시 맞추기**는 기존 파일을 원본 주소/이름에 매칭하고 누락 위치를 표시합니다. 원본 이미지명과 내용은 유지합니다. [PC 패치·Android APK 업데이트](https://github.com/redmonBI/ToonShelf/releases/latest)
