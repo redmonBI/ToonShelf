@@ -181,7 +181,7 @@ class Window(QMainWindow):
         self.cover_timer.timeout.connect(self.load_visible_covers)
         self.setWindowTitle(f'ToonShelf {VERSION} · 대기열 · 커뮤니티')
         self.resize(1450, 960)
-        self.setMinimumSize(1180, 780)
+        self.setMinimumSize(480, 480)
         self.build()
         self.apply_theme(self.cfg.get('theme','white'),persist=False)
         cached = STATE / 'catalog.json'
@@ -203,7 +203,8 @@ class Window(QMainWindow):
 
     def build(self):
         root = QWidget()
-        self.setCentralWidget(root)
+        root.setMinimumWidth(1040)
+        self.window_scroll=QScrollArea();self.window_scroll.setWidgetResizable(True);self.window_scroll.setWidget(root);self.setCentralWidget(self.window_scroll)
         shell=QVBoxLayout(root);shell.setContentsMargins(0,0,0,0);shell.setSpacing(0)
         self.app_toolbar=QWidget();toolbar=QHBoxLayout(self.app_toolbar);toolbar.setContentsMargins(12,7,12,7)
         self.menu_toggle=button('☰ 메뉴 접기',self.toggle_menu);toolbar.addWidget(self.menu_toggle)
@@ -1099,7 +1100,10 @@ class Window(QMainWindow):
         NotificationsDialog(self).exec()
 
     def refresh_notifications(self):
-        self.notification_button.setText('새 회차 '+str(self.collection_store.unread_count()))
+        count=self.collection_store.unread_count();self.notification_button.setText(f'● 새 회차 {count} · 확인' if count else '새 회차 0')
+        self.notification_button.setStyleSheet('font-weight:700;border:2px solid #ff9f0a;' if count else '')
+        rows=self.collection_store.notices()[:5]
+        self.notification_button.setToolTip('\n'.join(n['work']['title']+' · '+n['episode']['title'] for n in rows) or '새 회차 알림이 없습니다.')
 
     def check_episode_updates(self):
         if getattr(self,'accounts_dialog_open',False) or self.accounts_service.busy() or any(w.__class__.__name__=='UpdatesDialog' and w.isVisible() for w in QApplication.topLevelWidgets()):return
@@ -1113,7 +1117,12 @@ class Window(QMainWindow):
         self.notification_job=LibraryTask(lambda c,e:check_updates(store,automatic,cfg,c,e))
         def done(state,value):
             self.refresh_notifications()
-            if state=='success' and value['added']:self.status.setText(f"새 회차 {value['added']}개 · 알림에서 확인하세요")
+            if state=='success' and value['added']:
+                self.status.setText(f"새 회차 {value['added']}개 · 알림에서 확인하세요")
+                if self.cfg.get('notification_popup',True):
+                    box=QMessageBox(self);box.setWindowTitle('새 회차 도착');box.setText(f"새 회차 {value['added']}개가 등록되었습니다.")
+                    box.setInformativeText(self.notification_button.toolTip());view=box.addButton('알림 보기',QMessageBox.AcceptRole);box.addButton('나중에',QMessageBox.RejectRole)
+                    box.finished.connect(lambda _:QTimer.singleShot(0,self.notifications) if box.clickedButton()==view and not self.automation_closed else None);self.episode_notice=box;box.open()
         self.notification_job.done.connect(done);self.notification_job.start()
 
     def accounts(self):
@@ -1232,7 +1241,11 @@ def main():
     app.setStyle('Fusion')
     app.setStyleSheet(STYLE)
     window = Window()
-    window.show()
+    if '--startup' in sys.argv and window.cfg.get('startup_minimized',True):window.showMinimized()
+    else:window.show()
+    if '--startup' in sys.argv:
+        from startup import begin
+        QTimer.singleShot(2000,lambda:begin(window))
     if '--capture' in sys.argv:
         target = APP_DIR / 'preview.png'
         QTimer.singleShot(900, lambda: (window.grab().save(str(target)), app.quit()))

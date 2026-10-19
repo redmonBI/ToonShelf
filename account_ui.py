@@ -43,7 +43,7 @@ class AccountDialog(QDialog):
         login=QWidget();form=QFormLayout(login);self.tabs.addTab(login,'로그인·계정 생성')
         self.server=QLineEdit(self.client.server);self.server.setPlaceholderText('https://계정서버주소');form.addRow('계정 서버',self.server)
         self.username=QLineEdit();form.addRow('아이디',self.username);self.password=QLineEdit();self.password.setEchoMode(QLineEdit.Password);form.addRow('비밀번호',self.password);self.display=QLineEdit();form.addRow('표시 이름',self.display)
-        self.remember=QCheckBox('이 Windows 계정에서 자동 로그인');form.addRow(self.remember);self.consent=QCheckBox('마스터의 동기화 정보 조회 안내에 동의합니다');form.addRow(self.consent)
+        self.remember=QCheckBox('이 Windows 계정에서 자동 로그인 · 로그인 정보 암호화 저장');self.remember.setChecked(bool(self.client.remembered));form.addRow(self.remember);self.consent=QCheckBox('마스터의 동기화 정보 조회 안내에 동의합니다');form.addRow(self.consent)
         row=QHBoxLayout();row.addWidget(self.button('로그인',self.login));row.addWidget(self.button('계정 생성',self.register));row.addWidget(self.button('로그아웃·계정 변경',self.logout));form.addRow(row)
         sync=QWidget();sync_layout=QVBoxLayout(sync);self.tabs.addTab(sync,'동기화')
         self.identity=QLabel();self.identity.setTextFormat(Qt.PlainText);sync_layout.addWidget(self.identity);note=QLabel('서버에서 불러오면 현재 화면 목록·환경 설정을 해당 계정으로 전환합니다. 이미 저장한 이미지와 로컬 다운로드 작업은 유지됩니다. 서버 정보가 바뀌면 저장을 중단하고 먼저 불러오도록 안내합니다.');note.setWordWrap(True);sync_layout.addWidget(note)

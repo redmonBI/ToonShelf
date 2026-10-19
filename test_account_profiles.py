@@ -6,6 +6,12 @@ from core import Work
 from PySide6.QtWidgets import QApplication
 
 class AccountProfileTests(unittest.TestCase):
+    def test_newer_local_reading_position_survives_server_restore(self):
+        self.login('alpha',{'reading':{'work':{'chapter':'one','fraction':.1,'updated_at':'2026-10-14T10:00:00+00:00'}}})
+        self.window.cfg['reading_positions']['work']={'chapter':'two','fraction':.7,'updated_at':'2026-10-15T10:00:00+00:00'};self.window.persist_settings()
+        self.window.account_apply({'reading':{'work':{'chapter':'one','fraction':.1,'updated_at':'2026-10-14T10:00:00+00:00'}}})
+        self.assertEqual(self.window.cfg['reading_positions']['work']['chapter'],'two')
+        self.assertIsNotNone(self.service.stage_pending())
     @classmethod
     def setUpClass(cls):cls.qt=QApplication.instance() or QApplication([])
     def setUp(self):

@@ -165,4 +165,25 @@ class PendingProfileTests(unittest.TestCase):
         with patch.object(self.service,'stage_pending',side_effect=OSError('unwritable')):self.service.stop()
         self.assertIn('unwritable',self.host.status.text())
 
+class RememberedSessionTests(unittest.TestCase):
+    def test_expired_session_reauthenticates_once_and_keeps_revision(self):
+        from account_client import AccountClient,AccountError
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder,patch('account_client.protect',side_effect=lambda raw,decrypt=False:raw):
+            client=AccountClient(folder,'https://example.com');user={'id':'a'}
+            with patch.object(client,'request',return_value={'token':'old','user':user}):client.login('reader','secret',True)
+            client.revision=7
+            with patch.object(client,'request',side_effect=[AccountError('expired',401),{'token':'new','user':user}]) as request:
+                client.restore();self.assertEqual(request.call_count,2);self.assertEqual(client.token,'new');self.assertEqual(client.revision,7)
+            restored=AccountClient(folder,'https://example.com');self.assertEqual(restored.token,'new');self.assertEqual(restored.remembered['username'],'reader');restored.clear_session();self.assertFalse(restored.token_path.exists())
+    def test_network_failure_preserves_remembered_session(self):
+        from account_client import AccountClient,AccountError
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder,patch('account_client.protect',side_effect=lambda raw,decrypt=False:raw):
+            client=AccountClient(folder,'https://example.com')
+            with patch.object(client,'request',return_value={'token':'old','user':{'id':'a'}}):client.login('reader','secret',True)
+            with patch.object(client,'request',side_effect=AccountError('offline')):
+                with self.assertRaises(AccountError):client.restore()
+            self.assertTrue(client.token_path.exists());self.assertEqual(client.token,'old')
+
 if __name__=='__main__':unittest.main()

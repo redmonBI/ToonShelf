@@ -30,13 +30,14 @@ def protect(raw,decrypt=False):
 class AccountClient:
     def __init__(self,state,server=''):
         self.state=Path(state);self.state.mkdir(parents=True,exist_ok=True);self.server=endpoint(server) if server else '';self.token='';self.user=None;self.revision=None;self.config_revision=0;self.menu_labels={}
-        self.settings_path=self.state/'account_connection.json';self.token_path=self.state/'account_session.dpapi'
+        self.settings_path=self.state/'account_connection.json';self.token_path=self.state/'account_session.dpapi';self.remembered=None
         if not server and self.settings_path.exists():
             try:self.server=endpoint(json.loads(self.settings_path.read_text(encoding='utf-8')).get('server',''))
             except (ValueError,OSError):pass
         if self.token_path.exists():
             try:
-                saved=json.loads(protect(self.token_path.read_bytes(),True));self.token=saved['token'] if saved['server']==self.server else ''
+                saved=json.loads(protect(self.token_path.read_bytes(),True))
+                if saved['server']==self.server:self.token=saved['token'];self.remembered=saved
             except Exception:self.token=''
     def connect(self,server):
         new=endpoint(server)
@@ -64,16 +65,27 @@ class AccountClient:
     def login(self,username,password,remember=False):
         result=self.request('POST','/v1/login',{'username':username,'password':password});self.clear_session();self.token=result['token'];self.user=result['user'];self.revision=None
         if remember:
-            raw=protect(json.dumps({'server':self.server,'token':self.token}).encode());temp=self.token_path.with_suffix('.tmp');temp.write_bytes(raw);temp.replace(self.token_path)
+            self.remembered={'server':self.server,'token':self.token,'username':username,'password':password};self.save_session()
         return result
+    def save_session(self):
+        raw=protect(json.dumps(self.remembered).encode());temp=self.token_path.with_suffix('.tmp');temp.write_bytes(raw);temp.replace(self.token_path)
     def restore(self):
         try:result=self.request('GET','/v1/me')
         except AccountError as exc:
-            if exc.status==401:self.clear_session()
-            raise
+            if exc.status!=401:raise
+            saved=self.remembered
+            if not saved or not saved.get('username') or not saved.get('password'):
+                self.clear_session();raise AccountError('로그인 유지 정보를 갱신하려면 계정 화면에서 자동 로그인을 체크하고 한 번 로그인하세요.',401) from exc
+            try:
+                revision=self.revision;previous_user=self.user
+                result=self.login(saved['username'],saved['password'],True)
+                if previous_user and previous_user['id']==self.user['id']:self.revision=revision
+            except AccountError as login_error:
+                if login_error.status in (401,403):self.clear_session()
+                raise
         self.user=result['user'];return result
     def clear_session(self):
-        self.token='';self.user=None;self.revision=None;self.config_revision=0;self.menu_labels={};self.token_path.unlink(missing_ok=True)
+        self.token='';self.user=None;self.remembered=None;self.revision=None;self.config_revision=0;self.menu_labels={};self.token_path.unlink(missing_ok=True)
     def logout(self):
         try:return self.request('POST','/v1/logout')
         finally:self.clear_session()

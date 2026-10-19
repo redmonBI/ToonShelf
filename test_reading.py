@@ -14,6 +14,25 @@ from reading import chapter_images,prepare_opencomic,local_path
 from download_metrics import DownloadMetrics
 
 class ReadingTests(unittest.TestCase):
+    def test_resume_choice_keyboard_and_adjustable_autoscroll(self):
+        from PySide6.QtCore import QTimer,Qt
+        from reading_ui import OfflineLibrary
+        import app,json
+        qt=QApplication.instance() or QApplication([])
+        def pump(seconds=.3):
+            end=time.monotonic()+seconds
+            while time.monotonic()<end:qt.processEvents();time.sleep(.01)
+        with tempfile.TemporaryDirectory() as tmp,patch.object(app,'STATE',Path(tmp)),patch.dict(os.environ,{'TOONSHELF_TESTING':'1'}):
+            host=app.Window()
+            for timer in host.findChildren(QTimer):timer.stop()
+            pane=OfflineLibrary(host);pane.root=Path(tmp);pane.resize(900,700);pane.show();work=self.fixture(Path(tmp));pane.open_work(work);pump()
+            bar=pane.read_scroll.verticalScrollBar();bar.setValue(int(bar.maximum()*.4));pane.save_position();saved=host.cfg['reading_positions']['work'];self.assertIn('updated_at',saved)
+            self.assertAlmostEqual(json.loads((Path(tmp)/'settings.json').read_text(encoding='utf-8'))['reading_positions']['work']['fraction'],.4,delta=.01)
+            pane.back();pane.open_work(work);self.assertTrue(pane.resume_prompt.isVisible());next(b for b in pane.resume_prompt.buttons() if b.text()=='이어서 보기').click();pump();self.assertAlmostEqual(bar.value()/bar.maximum(),.4,delta=.03)
+            QTest.keyClick(pane.read_scroll,Qt.Key_Space);self.assertGreater(bar.value()/bar.maximum(),.4)
+            before=bar.value();QTest.keyClick(pane.read_scroll,Qt.Key_PageUp);self.assertLess(bar.value(),before)
+            pane.scroll_speed.setValue(200);pane.toggle_auto_scroll();before=bar.value();pump(.15);self.assertGreater(bar.value(),before);self.assertEqual(host.cfg['reader_scroll_speed'],200)
+            pane.back();self.assertFalse(pane.auto_timer.isActive());pane.shutdown();pane.close();host.close();qt.processEvents()
     def fixture(self,root):
         files=[]
         for n,name in enumerate(['10.png','2.png']):

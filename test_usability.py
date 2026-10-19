@@ -10,6 +10,16 @@ from site_registry import SiteRegistry,revise_site
 from community_rules import apply_request
 
 class UsabilityTests(unittest.TestCase):
+    def test_startup_manual_prompt_and_login_failure_do_not_enqueue(self):
+        from startup import begin
+        self.window.accounts_service.startup_ready=True
+        with patch.object(self.window,'automation_action') as enqueue:
+            self.window.cfg['startup_download']='manual';begin(self.window);enqueue.assert_not_called()
+            self.window.cfg['startup_download']='automatic';self.window.accounts_service.startup_error='offline';begin(self.window);enqueue.assert_not_called()
+            self.window.accounts_service.startup_error='';begin(self.window);enqueue.assert_called_once_with('enqueue','all')
+            enqueue.reset_mock();self.window.cfg['startup_download']='prompt';begin(self.window);self.window.startup_prompt.reject();enqueue.assert_not_called()
+    def test_window_can_shrink_and_scroll_horizontally(self):
+        self.window.show();self.window.resize(520,520);self.qt.processEvents();self.assertLess(self.window.geometry().width(),600);self.assertGreater(self.window.window_scroll.horizontalScrollBar().maximum(),0)
     @classmethod
     def setUpClass(cls):cls.qt=QApplication.instance() or QApplication([]);cls.qt.setQuitOnLastWindowClosed(False)
     def setUp(self):

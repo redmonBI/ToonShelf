@@ -1,4 +1,8 @@
-# ToonShelf 3.7.3 · PC와 APK 읽는 순서 복구
+# ToonShelf 3.8.1 · 대용량 폴더 검색 안정화
+
+Android 폴더 검색은 디스크 임시 목록과 회차별 경로 요청을 사용합니다. 기존 앱을 삭제하지 않고 업데이트한 뒤 대표 폴더를 다시 불러오세요. [업데이트 다운로드](https://github.com/redmonBI/ToonShelf/releases/latest)
+
+# ToonShelf 3.8.0 · PC와 APK 읽는 순서 복구
 
 회차별 순서 기록을 통합해 전체 대표 폴더와 작품 폴더 단위 이동에서 같은 순서로 읽습니다. PC 라이브러리의 **폴더 이동용 순서 기록 저장**으로 만든 `_reading_order.json`을 이미지와 함께 옮긴 뒤 앱에서 폴더를 새로고침하세요. [최신 PC 패치·Android APK](https://github.com/redmonBI/ToonShelf/releases/latest)
 

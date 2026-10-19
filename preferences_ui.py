@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt,QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,
     QPushButton,QTabWidget,QWidget,QComboBox,QCheckBox,QColorDialog,QLineEdit,
-    QFileDialog,QDoubleSpinBox,QSpinBox,QMessageBox)
+    QFileDialog,QDoubleSpinBox,QSpinBox,QMessageBox,QScrollArea)
 import themes
 
 def button(text,callback):
@@ -35,8 +35,9 @@ class SettingsCenter(QDialog):
             row.addWidget(button(name,lambda checked=False,c=color:self.set_background(c)))
         reader.addRow(row);row=QHBoxLayout();row.addWidget(button('원하는 색 선택…',self.choose_background));row.addWidget(button('테마 기본색으로 복원',lambda:self.set_background('')));reader.addRow(row);self.update_background()
         self.read_width=QSpinBox();self.read_width.setRange(400,1600);self.read_width.setSuffix(' px');self.read_width.setValue(host.cfg.get('reader_width',850));self.read_width.valueChanged.connect(self.change_width);reader.addRow('최대 읽기 폭',self.read_width)
+        speed=QSpinBox();speed.setRange(10,1000);speed.setSuffix(' px/초');speed.setValue(host.cfg.get('reader_scroll_speed',80));speed.valueChanged.connect(lambda value:host.set_view_preference('reader_scroll_speed',value));reader.addRow('자동 내리기 속도',speed)
         self.exe=QLineEdit(host.opencomic_path());self.exe.setReadOnly(True);row=QHBoxLayout();row.addWidget(self.exe);row.addWidget(button('찾기…',self.choose_viewer));reader.addRow('OpenComic 실행 파일',row)
-        help_text=QLabel('슬림 보기: 32px 텍스트 메뉴만 남겨 이미지를 길게 표시\nF11: 전체 화면 / F9: 집중 보기 / Esc: 화면·도구 복원\nAlt + ← / →: 이전·다음 화\n배경색은 원본 이미지에 영향을 주지 않습니다.');help_text.setWordWrap(True);reader.addRow(help_text)
+        help_text=QLabel('슬림 보기: 32px 텍스트 메뉴만 남겨 이미지를 길게 표시\nF11: 전체 화면 / F9: 집중 보기 / Esc: 화면·도구 복원\nAlt + ← / →: 이전·다음 화\nSpace / Page Down: 아래로 · Page Up: 위로 · ↑ / ↓: 조금씩 이동\nA: 자동 내리기 시작·중지 · 속도는 읽기 하단에서 변경\n작품을 다시 열면 읽던 회차와 위치를 안내합니다.\n배경색은 원본 이미지에 영향을 주지 않습니다.');help_text.setWordWrap(True);reader.addRow(help_text)
         download=self.page('다운로드');row=QHBoxLayout();self.path_label=QLabel(host.path.text());self.path_label.setWordWrap(True);row.addWidget(self.path_label,1);row.addWidget(button('저장 폴더 변경…',self.choose_folder));download.addRow('저장 위치',row)
         from automation_ui import tail_combo
         self.latest=tail_combo(host.latest.currentData());self.latest.currentIndexChanged.connect(lambda i:host.latest.setCurrentIndex(i));download.addRow('일반 다운로드 범위',self.latest)
@@ -49,6 +50,12 @@ class SettingsCenter(QDialog):
         self.selector=QLineEdit(host.cfg['image_selector']);download.addRow('본문 이미지 선택자',self.selector)
         note=QLabel('요청 간격·동시 작품 수는 아래 버튼으로 저장하세요.\n속도·시간 제한은 전체 다운로드에 즉시 적용됩니다.');note.setWordWrap(True);download.addRow(note);self.download_status=QLabel();download.addRow(self.download_status);download.addRow(button('다운로드 설정 저장',self.save_download))
         convenience=self.page('관리·업데이트')
+        startup_check=QCheckBox('PC 로그인 시 ToonShelf 실행');startup_check.setChecked(bool(host.cfg.get('startup_enabled',False)));startup_check.toggled.connect(self.change_startup);convenience.addRow(startup_check)
+        self.check(convenience,'PC 시작 시 최소화','startup_minimized')
+        start_mode=QComboBox()
+        for text,key in [('수동으로 진행','manual'),('팝업에서 진행 / 보류 선택','prompt'),('내 웹툰 목록 자동 다운로드','automatic')]:start_mode.addItem(text,key)
+        start_mode.setCurrentIndex(max(0,start_mode.findData(host.cfg.get('startup_download','manual'))));start_mode.currentIndexChanged.connect(lambda _:host.set_view_preference('startup_download',start_mode.currentData()));convenience.addRow('PC 시작 다운로드',start_mode)
+        self.check(convenience,'새 회차 등록 시 알림 팝업','notification_popup')
         for text,fn in [('자동 다운로드 목록·예약·보관 정리',host.automation_dialog),('다운로드 대기열 관리',host.queue_dialog),('완료 후 종료·타이머',host.power_dialog),('다운로드 기록·내보내기',host.history),('업데이트 확인·기존 폴더 패치',host.updates_dialog)]:convenience.addRow(button(text,lambda checked=False,fn=fn:self.open_manager(fn)))
         if hasattr(host,'accounts'):convenience.addRow(button('내 계정·로그인·동기화',lambda:self.open_manager(host.accounts)))
         from update_storage_ui import UpdateStorageDialog
@@ -56,12 +63,17 @@ class SettingsCenter(QDialog):
         note=QLabel('업데이트 파일을 검사한 뒤 기존 프로그램 폴더에 패치합니다.\n내 설정, 읽던 위치와 다운로드한 작품은 유지됩니다.');note.setWordWrap(True);convenience.addRow(note)
         self.tabs.setCurrentIndex(page);layout.addWidget(button('닫기',self.accept),alignment=Qt.AlignRight)
     def page(self,title):
-        widget=QWidget();form=QFormLayout(widget);form.setContentsMargins(16,20,16,16);form.setVerticalSpacing(16);self.tabs.addTab(widget,title);return form
+        widget=QWidget();form=QFormLayout(widget);form.setContentsMargins(16,20,16,16);form.setVerticalSpacing(16);scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(widget);self.tabs.addTab(scroll,title);return form
+    def change_startup(self,enabled):
+        try:
+            from startup import configure
+            configure(enabled);self.host.cfg['startup_enabled']=bool(enabled);self.host.persist_settings()
+        except Exception as exc:QMessageBox.warning(self,'PC 시작 설정',str(exc))
     def open_manager(self,callback):
         # Close this modal first so an update can exit the application cleanly.
         self.accept();QTimer.singleShot(0,callback)
     def check(self,form,title,key,callback=None):
-        widget=QCheckBox(title);widget.setChecked(bool(self.host.cfg.get(key,False)));widget.toggled.connect(callback or (lambda value:self.host.set_view_preference(key,value)));form.addRow(widget);setattr(self,key,widget)
+        widget=QCheckBox(title);widget.setChecked(bool(self.host.cfg.get(key,key in ('startup_minimized','notification_popup'))));widget.toggled.connect(callback or (lambda value:self.host.set_view_preference(key,value)));form.addRow(widget);setattr(self,key,widget)
     def set_background(self,value):
         self.host.set_view_preference('reader_background',value);self.update_background()
     def update_background(self):
